@@ -8,14 +8,16 @@
 #
 # Requirements:
 #   - Build tools: gcc, make, xz, patch
-#   - Full kernel source tree with patches already applied, or matching clean source
+#   - Full kernel source tree matching your distro's kernel (not vanilla kernel.org)
+#
+# IMPORTANT — Distro kernels vs vanilla:
+#   Distros (Fedora, Ubuntu, etc.) patch the kernel with ABI-changing modifications.
+#   Building against vanilla kernel.org source produces modules with incompatible
+#   struct layouts that will fail to load ("section size must match" errors).
+#   Always use your distro's kernel source. See README.md for instructions.
 #
 # Output:
 #   compiled/<kernel-version>/*.ko.xz
-#
-# Notes:
-#   The build happens IN the source tree (no copy). Build artifacts are cleaned up.
-#   The source tree must have the audio patches applied before building.
 
 set -euo pipefail
 
@@ -76,11 +78,8 @@ find_kernel_source() {
     done
 
     error "Could not find kernel source tree with AMD audio sources.
-You need the full kernel source (not just headers).
-
-Clone from GitHub:
-  KVER_BASE=\$(uname -r | cut -d- -f1)
-  git clone --depth 1 --branch v\${KVER_BASE} https://github.com/torvalds/linux.git
+You need the full kernel source from your distro (not vanilla kernel.org).
+See README.md for distro-specific instructions.
 
 Then re-run:
   $0 KSRC=/path/to/linux"
@@ -139,9 +138,35 @@ build_modules() {
         make olddefconfig &>/dev/null
     fi
 
+    # Match the running kernel's version string exactly.
+    # Distro kernels encode their version in EXTRAVERSION (e.g. "-200.fc43.x86_64").
+    # Without this, modules get a wrong vermagic and fail to load.
+    local src_extraver expected_suffix
+    src_extraver="$(sed -n 's/^EXTRAVERSION = *//p' "$ksrc/Makefile")"
+    # Extract suffix after base version: "6.18.9-200.fc43.x86_64" -> "-200.fc43.x86_64"
+    expected_suffix="$(echo "$KVER" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')"
+    if [[ -n "$expected_suffix" && "$src_extraver" != "$expected_suffix" ]]; then
+        step "Setting EXTRAVERSION = $expected_suffix (to match running kernel)"
+        sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $expected_suffix/" "$ksrc/Makefile"
+    fi
+
+    # Suppress the git-dirty '+' suffix from setlocalversion
+    export LOCALVERSION=
+
     # Ensure build infrastructure is ready
     if [[ ! -f "$ksrc/scripts/basic/fixdep" ]]; then
+        step "Running modules_prepare..."
         make modules_prepare -j"$JOBS" &>/dev/null
+    fi
+
+    # Verify version string matches before building
+    if [[ -f "$ksrc/include/generated/utsrelease.h" ]]; then
+        local built_ver
+        built_ver="$(sed -n 's/.*UTS_RELEASE "\(.*\)"/\1/p' "$ksrc/include/generated/utsrelease.h")"
+        if [[ "$built_ver" != "$KVER" ]]; then
+            warn "Version mismatch: source produces '$built_ver' but target is '$KVER'"
+            warn "Modules may fail to load. Ensure KSRC matches your distro's kernel."
+        fi
     fi
 
     step "Building patched modules (using $JOBS parallel jobs)..."

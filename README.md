@@ -68,22 +68,43 @@ sound settings.
 
 ## Getting Kernel Source
 
-The build requires a **full kernel source tree** because the patched files include `.c`
-source files that aren't in header-only packages (e.g., `kernel-devel`).
+The build requires a **full kernel source tree** from your **distro** (not vanilla
+kernel.org). Distros patch the kernel with ABI-changing modifications — building
+against vanilla source produces modules that fail to load.
 
-**If you already have it** (e.g., `~/linux/`):
+**Fedora / RHEL / CentOS:**
+
+```bash
+# Install the source RPM for your running kernel
+koji download-build --arch=src kernel-$(uname -r | sed 's/\.fc.*/.fc$(rpm -E %fedora)/')
+# Or download from https://koji.fedoraproject.org/
+
+# Extract and prepare
+rpm2cpio kernel-*.src.rpm | cpio -idmv
+tar xf linux-$(uname -r | cut -d- -f1).tar.xz
+cd linux-$(uname -r | cut -d- -f1)
+patch -p1 < ../patch-*-redhat.patch  # Apply distro patches
+cp Makefile.rhelver .                 # Copy version metadata
+```
+
+**Ubuntu / Debian:**
+
+```bash
+apt source linux-image-$(uname -r)
+```
+
+**Arch Linux:**
+
+```bash
+asp checkout linux
+cd linux/trunk
+makepkg --nobuild  # Downloads and patches source
+```
+
+**If you already have distro-matched source** (e.g., `~/linux/`):
 
 ```bash
 make build KSRC=~/linux
-```
-
-**If you need to download it:**
-
-```bash
-# Clone the matching kernel version (shallow — fast, ~200 MB)
-KVER_BASE=$(uname -r | cut -d- -f1)  # e.g. 6.18.9
-git clone --depth 1 --branch v${KVER_BASE} https://github.com/torvalds/linux.git
-make build KSRC=./linux
 ```
 
 ---
@@ -129,7 +150,7 @@ sudo make dkms-remove
 DKMS copies the patch and build script to `/usr/src/hp-dragonfly-audio-1.0/`. When a
 new kernel is installed, it automatically patches, builds, and installs the modules.
 
-**Note:** DKMS still needs the full kernel source tree at build time. Keep a source
+**Note:** DKMS still needs the full distro kernel source at build time. Keep a source
 tree at `/usr/src/linux-<version>/` or `~/linux-<version>/` for each kernel you run.
 
 ---
@@ -165,8 +186,14 @@ Your kernel was updated and the patched modules were replaced:
 
 ### Build fails
 
-- Ensure you're using a **full** kernel source tree, not just headers
+- Use your **distro's** kernel source, not vanilla kernel.org (see above)
 - Check that the patch applies cleanly (it was written for kernel 6.18.9)
+
+### Modules fail to load ("section size must match" or "version magic" errors)
+
+Your modules were built against the wrong kernel source. Distros add ABI-changing
+patches (e.g., extra fields in `struct module`). Rebuild using your distro's kernel
+source tree.
 
 ### PipeWire shows "Dummy Output"
 

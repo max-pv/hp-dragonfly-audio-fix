@@ -42,14 +42,8 @@ find_kernel_source() {
     # No full source tree found
     die "No kernel source tree found for version $base_ver.
 
-DKMS needs the full kernel source to build these modules.
-Please ensure one of these exists:
-  /linux-${base_ver}/
-  /usr/src/linux-${base_ver}/
-
-Clone from GitHub:
-  git clone --depth 1 --branch v${base_ver} https://github.com/torvalds/linux.git
-  sudo mv linux /usr/src/linux-${base_ver}
+DKMS needs the full kernel source from your distro (not vanilla kernel.org).
+See README.md for distro-specific instructions.
 
 Then retry: sudo dkms build hp-dragonfly-audio/1.0 -k $KVER"
 }
@@ -89,6 +83,15 @@ if [[ ! -f "$BUILDDIR/.config" ]]; then
         die "No kernel .config found for $KVER"
     fi
 fi
+
+# Match the running kernel's version string exactly
+KVER_SUFFIX="$(echo "$KVER" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')"
+SRC_EXTRAVER="$(sed -n 's/^EXTRAVERSION = *//p' "$BUILDDIR/Makefile")"
+if [[ -n "$KVER_SUFFIX" && "$SRC_EXTRAVER" != "$KVER_SUFFIX" ]]; then
+    log "Setting EXTRAVERSION = $KVER_SUFFIX"
+    sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $KVER_SUFFIX/" "$BUILDDIR/Makefile"
+fi
+export LOCALVERSION=
 
 make olddefconfig &>/dev/null
 make modules_prepare -j"$JOBS" &>/dev/null
