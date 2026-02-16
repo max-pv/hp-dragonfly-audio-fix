@@ -1,0 +1,68 @@
+From: Max <max@fedora>
+Date: Sun, 16 Feb 2026 02:00:00 -0800
+Subject: [PATCH 2/4] soundwire: amd: Add ACP 6.0 revision support
+
+The AMD SoundWire manager driver rejects ACP revision 0x60 (Rembrandt)
+in multiple switch statements, preventing SoundWire codec enumeration.
+The register offsets and behavior for 0x60 are identical to ACP 6.3.
+
+Add case 0x60 and 0x6f to all revision switches in amd_manager.c, and
+add a NULL safety check in amd_init.c for the manager startup path.
+
+Signed-off-by: Max <max@fedora>
+---
+ drivers/soundwire/amd_init.c    |  2 ++
+ drivers/soundwire/amd_manager.c | 10 +++++++++-
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+--- a/drivers/soundwire/amd_init.c	2026-02-15 16:35:19.679615865 -0800
++++ b/drivers/soundwire/amd_init.c	2026-02-15 18:29:05.607393722 -0800
+@@ -157,6 +157,8 @@
+ 		if (!(ctx->link_mask & BIT(i)))
+ 			continue;
+ 		amd_manager = dev_get_drvdata(&ctx->pdev[i]->dev);
++		if (!amd_manager)
++			return -ENODEV;
+ 		ret = amd_sdw_manager_start(amd_manager);
+ 		if (ret)
+ 			return ret;
+--- a/drivers/soundwire/amd_manager.c	2026-02-15 16:35:19.679615865 -0800
++++ b/drivers/soundwire/amd_manager.c	2026-02-15 18:28:50.345483408 -0800
+@@ -485,6 +485,8 @@
+ 
+ 	dev_dbg(amd_manager->dev, "p_params->num:0x%x\n", p_params->num);
+ 	switch (amd_manager->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV_ID:
+ 		switch (amd_manager->instance) {
+ 		case ACP_SDW0:
+@@ -528,6 +530,8 @@
+ 	u32 offset_reg, lane_ctrl_ch_en_reg;
+ 
+ 	switch (amd_manager->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV_ID:
+ 		switch (amd_manager->instance) {
+ 		case ACP_SDW0:
+@@ -600,6 +604,8 @@
+ 	u32 lane_ctrl_ch_en_reg;
+ 
+ 	switch (amd_manager->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV_ID:
+ 		switch (amd_manager->instance) {
+ 		case ACP_SDW0:
+@@ -1025,6 +1031,8 @@
+ 	amd_manager->bus.controller_id = 0;
+ 	dev_dbg(dev, "acp_rev:0x%x\n", amd_manager->acp_rev);
+ 	switch (amd_manager->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV_ID:
+ 		switch (amd_manager->instance) {
+ 		case ACP_SDW0:
+-- 
+2.48.1

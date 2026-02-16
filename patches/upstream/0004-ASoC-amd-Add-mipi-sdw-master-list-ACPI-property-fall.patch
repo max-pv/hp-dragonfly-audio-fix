@@ -1,0 +1,30 @@
+From: Max <max@fedora>
+Date: Sun, 16 Feb 2026 02:00:00 -0800
+Subject: [PATCH 4/4] ASoC: amd: Add mipi-sdw-master-list ACPI property fallback
+
+Some BIOS implementations (including HP Dragonfly Pro) use the
+deprecated "mipi-sdw-master-list" ACPI property name instead of the
+current "mipi-sdw-manager-list". Add a fallback to try the old name
+before failing, matching the approach used by Intel SoundWire drivers.
+
+Signed-off-by: Max <max@fedora>
+---
+ sound/soc/amd/acp/amd-sdw-acpi.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/sound/soc/amd/acp/amd-sdw-acpi.c	2026-02-15 16:35:21.025703002 -0800
++++ b/sound/soc/amd/acp/amd-sdw-acpi.c	2026-02-15 18:04:36.014677024 -0800
+@@ -36,6 +36,11 @@
+ 	ret = fwnode_property_read_u32_array(acpi_fwnode_handle(adev),
+ 					     "mipi-sdw-manager-list", &sdw_bitmap, 1);
+ 	if (ret) {
++		/* Try deprecated property name used by older BIOS */
++		ret = fwnode_property_read_u32_array(acpi_fwnode_handle(adev),
++						     "mipi-sdw-master-list", &sdw_bitmap, 1);
++	}
++	if (ret) {
+ 		dev_err(&adev->dev,
+ 			"Failed to read mipi-sdw-manager-list: %d\n", ret);
+ 		return -EINVAL;
+-- 
+2.48.1

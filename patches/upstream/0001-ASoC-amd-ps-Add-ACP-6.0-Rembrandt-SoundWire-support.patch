@@ -1,0 +1,196 @@
+From: Max <max@fedora>
+Date: Sun, 16 Feb 2026 02:00:00 -0800
+Subject: [PATCH 1/4] ASoC: amd: ps: Add ACP 6.0 (Rembrandt) SoundWire support
+
+The HP Dragonfly Pro Laptop PC uses AMD Rembrandt (ACP revision 0x60)
+with SoundWire-connected RT1316 speaker amplifiers. The ACP 6.0 register
+layout is identical to ACP 6.3 for SoundWire operations, but the driver
+rejects revision 0x60 in multiple switch statements.
+
+Add case 0x60 (and 0x6f for Rembrandt-R) to all revision checks in
+pci-ps.c and ps-sdw-dma.c. Also add the correct SDWC ACPI address for
+Rembrandt (ADR=2, versus ADR=5 on ACP 6.3), and prevent the DMIC-only
+pci-acp6x driver from claiming the device when SoundWire ACPI devices
+are present.
+
+Signed-off-by: Max <max@fedora>
+---
+ sound/soc/amd/ps/acp63.h       |  5 +++
+ sound/soc/amd/ps/pci-ps.c      | 33 ++++++++++++++--
+ sound/soc/amd/ps/ps-sdw-dma.c  | 16 ++++++--
+ sound/soc/amd/yc/pci-acp6x.c   |  8 ++++
+ 4 files changed, 56 insertions(+), 6 deletions(-)
+
+--- a/sound/soc/amd/ps/acp63.h	2026-02-15 16:35:21.026992774 -0800
++++ b/sound/soc/amd/ps/acp63.h	2026-02-15 18:17:58.803890795 -0800
+@@ -61,6 +61,7 @@
+ 
+ #define ACP63_DMIC_ADDR			2
+ #define ACP63_SDW_ADDR			5
++#define ACP60_SDW_ADDR			2
+ #define AMD_SDW_MAX_MANAGERS		2
+ 
+ /* time in ms for acp timeout */
+@@ -370,6 +371,8 @@
+ 	u32 addr;
+ 	u32 reg_range;
+ 	u32 acp_rev;
++	u32 subsystem_vendor;
++	u32 subsystem_device;
+ 	u32 acp_sw_pad_keeper_en;
+ 	u32 acp_pad_pulldown_ctrl;
+ 	u16 acp63_sdw0_dma_intr_stat[ACP63_SDW0_DMA_MAX_STREAMS];
+--- a/sound/soc/amd/ps/pci-ps.c	2026-02-15 16:35:21.026992774 -0800
++++ b/sound/soc/amd/ps/pci-ps.c	2026-02-15 18:18:04.819493475 -0800
+@@ -112,6 +112,8 @@
+ 					break;
+ 				}
+ 				switch (adata->acp_rev) {
++				case 0x60:
++				case 0x6f:
+ 				case ACP63_PCI_REV:
+ 					adata->acp63_sdw0_dma_intr_stat[stream_id] = 1;
+ 					break;
+@@ -126,6 +128,8 @@
+ 		}
+ 	}
+ 	switch (adata->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		if (ext_intr_stat1 & ACP63_P1_AUDIO1_RX_THRESHOLD) {
+ 			writel(ACP63_P1_AUDIO1_RX_THRESHOLD,
+@@ -335,6 +339,12 @@
+ 			mach->mach_params.links = mach->links;
+ 			mach->mach_params.link_mask = mach->link_mask;
+ 			mach->mach_params.subsystem_rev = acp_data->acp_rev;
++			mach->mach_params.subsystem_vendor = acp_data->subsystem_vendor;
++			mach->mach_params.subsystem_device = acp_data->subsystem_device;
++			mach->mach_params.subsystem_id_set = true;
++
++			dev_dbg(dev, "SSID %x%x\n", mach->mach_params.subsystem_vendor,
++				mach->mach_params.subsystem_device);
+ 			return mach;
+ 		}
+ 	}
+@@ -431,7 +441,9 @@
+ 		is_dmic_dev = true;
+ 
+ 	if (acp_data->is_sdw_config) {
+-		ret = acp_scan_sdw_devices(&pci->dev, ACP63_SDW_ADDR);
++		u64 sdw_addr = (acp_data->acp_rev < ACP63_PCI_REV) ?
++				ACP60_SDW_ADDR : ACP63_SDW_ADDR;
++		ret = acp_scan_sdw_devices(&pci->dev, sdw_addr);
+ 		if (!ret && acp_data->info.link_mask)
+ 			is_sdw_dev = true;
+ 	}
+@@ -549,6 +561,8 @@
+ 		return -ENOMEM;
+ 
+ 	switch (adata->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		acp63_hw_init_ops(adata->hw_ops);
+ 		break;
+@@ -581,6 +595,8 @@
+ 
+ 	/* ACP PCI revision id check for ACP6.3, ACP7.0 & ACP7.1 platforms */
+ 	switch (pci->revision) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 	case ACP70_PCI_REV:
+ 	case ACP71_PCI_REV:
+@@ -617,6 +633,9 @@
+ 	adata->addr = addr;
+ 	adata->reg_range = ACP63_REG_END - ACP63_REG_START;
+ 	adata->acp_rev = pci->revision;
++	adata->subsystem_vendor = pci->subsystem_vendor;
++	adata->subsystem_device = pci->subsystem_device;
++
+ 	pci_set_master(pci);
+ 	pci_set_drvdata(pci, adata);
+ 	mutex_init(&adata->acp_lock);
+--- a/sound/soc/amd/ps/ps-sdw-dma.c	2026-02-15 16:35:21.026992774 -0800
++++ b/sound/soc/amd/ps/ps-sdw-dma.c	2026-02-15 18:37:29.834570118 -0800
+@@ -247,6 +247,8 @@
+ 	u32 sdw_mem_window_offset;
+ 
+ 	switch (acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		switch (manager_instance) {
+ 		case ACP_SDW0:
+@@ -360,6 +362,8 @@
+ 		return -EINVAL;
+ 	stream_id = stream->stream_id;
+ 	switch (sdw_data->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		switch (stream->instance) {
+ 		case ACP_SDW0:
+@@ -437,6 +441,8 @@
+ 
+ 	byte_count.bytescount = 0;
+ 	switch (acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		switch (stream->instance) {
+ 		case ACP_SDW0:
+@@ -518,6 +524,8 @@
+ 	if (!stream)
+ 		return -EINVAL;
+ 	switch (sdw_data->acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		switch (stream->instance) {
+ 		case ACP_SDW0:
+@@ -564,6 +572,8 @@
+ 	stream = substream->runtime->private_data;
+ 	stream_id = stream->stream_id;
+ 	switch (acp_rev) {
++	case 0x60:
++	case 0x6f:
+ 	case ACP63_PCI_REV:
+ 		switch (stream->instance) {
+ 		case ACP_SDW0:
+@@ -777,7 +787,7 @@
+ 	struct sdw_dma_dev_data *sdw_data;
+ 
+ 	sdw_data = dev_get_drvdata(dev);
+-	if (sdw_data->acp_rev == ACP63_PCI_REV)
++	if (sdw_data->acp_rev <= ACP63_PCI_REV)
+ 		return acp63_restore_sdw_dma_config(sdw_data);
+ 	else
+ 		return acp70_restore_sdw_dma_config(sdw_data);
+--- a/sound/soc/amd/yc/pci-acp6x.c	2026-02-15 16:35:21.028706055 -0800
++++ b/sound/soc/amd/yc/pci-acp6x.c	2026-02-15 18:18:11.448055671 -0800
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include <linux/pci.h>
++#include <linux/acpi.h>
+ #include <linux/module.h>
+ #include <linux/io.h>
+ #include <linux/delay.h>
+@@ -168,6 +169,13 @@
+ 		dev_dbg(&pci->dev, "acp6x pci device not found\n");
+ 		return -ENODEV;
+ 	}
++
++	/* Defer to pci-ps driver if SoundWire controller is described in ACPI */
++	if (ACPI_COMPANION(&pci->dev) &&
++	    acpi_find_child_device(ACPI_COMPANION(&pci->dev), 2, 0)) {
++		dev_dbg(&pci->dev, "SoundWire ACPI device found, deferring\n");
++		return -ENODEV;
++	}
+ 	if (pci_enable_device(pci)) {
+ 		dev_err(&pci->dev, "pci_enable_device failed\n");
+ 		return -ENODEV;
+-- 
+2.48.1
