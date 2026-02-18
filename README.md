@@ -21,9 +21,10 @@ for SoundWire. This causes:
 
 ## The Fix
 
-This patches **8 kernel modules** across the AMD audio and SoundWire subsystems to
-accept ACP revision 0x60, adds a DMI quirk for the HP Dragonfly Pro, and installs an
+This patches **8 kernel modules** across the AMD audio and SoundWire subsystems to accept ACP revision 0x60, and installs an
 ALSA UCM profile plus modprobe config so PipeWire can configure speakers and mic.
+
+The patchset is split: generic Rembrandt (ACP 6.0 / rev 0x60) support where possible; only a small machine-specific DMI quirk targets the HP Dragonfly Pro (subsystem 0x103c:0x8a7f).
 
 **Modules patched:**
 
@@ -269,3 +270,10 @@ identifying the bug to writing the patch. Start with
 | Codecs | 2× Realtek RT1316 (SoundWire) |
 | ACPI Path | `\_SB_.PCI0.GP17.ACP_.SDWC` |
 | Tested Kernel | 6.18.9-200.fc43.x86_64 |
+
+TODO: Upstream submission and generalization
+
+- Submit the generic Rembrandt patches (ACP 6.0 / rev 0x60 support and the PDM DAI-ID change) as separate, focused patches for upstream review.
+- Keep the HP Dragonfly-specific DMI quirk in its own minimal patch with logs and repro steps; mark it as a machine quirk.
+- Prefer ACPI/codec/ADR-based detection or explicit codec ID matching to generalize the DMIC fallback; only use DMI when ACPI lacks needed information.
+- Add a machines/ or quirks/ directory to track machine-specific entries and rationale, keeping the main patchset clearly generic.
