@@ -26,6 +26,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 declare -A MODULES=(
     ["snd-pci-ps.ko.xz"]="sound/soc/amd/ps"
     ["snd-ps-sdw-dma.ko.xz"]="sound/soc/amd/ps"
+    ["snd-ps-pdm-dma.ko.xz"]="sound/soc/amd/ps"
     ["snd-soc-acpi-amd-match.ko.xz"]="sound/soc/amd/acp"
     ["snd-amd-sdw-acpi.ko.xz"]="sound/soc/amd/acp"
     ["snd-acp-sdw-legacy-mach.ko.xz"]="sound/soc/amd/acp"

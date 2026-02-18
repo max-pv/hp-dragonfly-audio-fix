@@ -26,6 +26,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 declare -A MODULES=(
     ["snd-pci-ps.ko.xz"]="sound/soc/amd/ps"
     ["snd-ps-sdw-dma.ko.xz"]="sound/soc/amd/ps"
+    ["snd-ps-pdm-dma.ko.xz"]="sound/soc/amd/ps"
     ["snd-soc-acpi-amd-match.ko.xz"]="sound/soc/amd/acp"
     ["snd-amd-sdw-acpi.ko.xz"]="sound/soc/amd/acp"
     ["snd-acp-sdw-legacy-mach.ko.xz"]="sound/soc/amd/acp"
@@ -64,7 +65,10 @@ cp "$ROOT_DIR/ucm/amd-soundwire.conf" "$UCM_DEST/amd-soundwire.conf"
 cp "$ROOT_DIR/ucm/HiFi.conf" "$UCM_DEST/HiFi.conf"
 
 # Install modprobe config
-echo 'options snd_acp_sdw_legacy_mach quirk=32768' > "$MODPROBE_CONF"
+cat > "$MODPROBE_CONF" <<'EOF'
+softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma
+options snd_acp_sdw_legacy_mach quirk=32800
+EOF
 
 # Rebuild module dependencies
 depmod -a "$KVER"

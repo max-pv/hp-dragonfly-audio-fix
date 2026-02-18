@@ -31,9 +31,20 @@
  			return mach;
  		}
  	}
-@@ -431,7 +441,9 @@
+@@ -431,7 +441,20 @@
  		is_dmic_dev = true;
  
++	/*
++	 * HP Dragonfly Pro (ACP6.0) firmware exposes SoundWire ACPI children but
++	 * does not mark the internal DMIC node with acp-audio-device-type.
++	 * Force-enable PDM so the machine driver can register DMIC capture.
++	 */
++	if (!is_dmic_dev &&
++	    acp_data->acp_rev == 0x60 &&
++	    acp_data->subsystem_vendor == 0x103c &&
++	    acp_data->subsystem_device == 0x8a7f)
++		is_dmic_dev = true;
++
  	if (acp_data->is_sdw_config) {
 -		ret = acp_scan_sdw_devices(&pci->dev, ACP63_SDW_ADDR);
 +		u64 sdw_addr = (acp_data->acp_rev < ACP63_PCI_REV) ?
@@ -389,4 +400,13 @@
  		ret = amd_sdw_manager_start(amd_manager);
  		if (ret)
  			return ret;
-
+--- a/sound/soc/amd/ps/ps-pdm-dma.c
++++ b/sound/soc/amd/ps/ps-pdm-dma.c
+@@ -352,6 +352,7 @@
+ 	.hw_params	= acp63_pdm_dma_hw_params,
+ 	.pointer	= acp63_pdm_dma_pointer,
+ 	.pcm_construct	= acp63_pdm_dma_new,
++	.use_dai_pcm_id = true,
+ };
+ 
+ static int acp63_pdm_audio_probe(struct platform_device *pdev)

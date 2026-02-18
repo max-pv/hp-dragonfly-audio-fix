@@ -1,6 +1,6 @@
 From: Max <max@fedora>
 Date: Sun, 16 Feb 2026 02:00:00 -0800
-Subject: [PATCH 1/4] ASoC: amd: ps: Add ACP 6.0 (Rembrandt) SoundWire support
+Subject: [PATCH 1/5] ASoC: amd: ps: Add ACP 6.0 (Rembrandt) SoundWire support
 
 The HP Dragonfly Pro Laptop PC uses AMD Rembrandt (ACP revision 0x60)
 with SoundWire-connected RT1316 speaker amplifiers. The ACP 6.0 register
@@ -15,11 +15,11 @@ are present.
 
 Signed-off-by: Max <max@fedora>
 ---
- sound/soc/amd/ps/acp63.h       |  5 +++
- sound/soc/amd/ps/pci-ps.c      | 33 ++++++++++++++--
- sound/soc/amd/ps/ps-sdw-dma.c  | 16 ++++++--
- sound/soc/amd/yc/pci-acp6x.c   |  8 ++++
- 4 files changed, 56 insertions(+), 6 deletions(-)
+ sound/soc/amd/ps/acp63.h      |  3 +++
+ sound/soc/amd/ps/pci-ps.c     | 32 +++++++++++++++++++++++++++++++-
+ sound/soc/amd/ps/ps-sdw-dma.c | 12 +++++++++++-
+ sound/soc/amd/yc/pci-acp6x.c  |  8 ++++++++
+ 4 files changed, 53 insertions(+), 2 deletions(-)
 
 --- a/sound/soc/amd/ps/acp63.h	2026-02-15 16:35:21.026992774 -0800
 +++ b/sound/soc/amd/ps/acp63.h	2026-02-15 18:17:58.803890795 -0800
@@ -73,9 +73,20 @@ Signed-off-by: Max <max@fedora>
  			return mach;
  		}
  	}
-@@ -431,7 +441,9 @@
+@@ -431,7 +441,20 @@
  		is_dmic_dev = true;
  
++	/*
++	 * HP Dragonfly Pro (ACP6.0) firmware exposes SoundWire ACPI children but
++	 * does not mark the internal DMIC node with acp-audio-device-type.
++	 * Force-enable PDM so the machine driver can register DMIC capture.
++	 */
++	if (!is_dmic_dev &&
++	    acp_data->acp_rev == 0x60 &&
++	    acp_data->subsystem_vendor == 0x103c &&
++	    acp_data->subsystem_device == 0x8a7f)
++		is_dmic_dev = true;
++
  	if (acp_data->is_sdw_config) {
 -		ret = acp_scan_sdw_devices(&pci->dev, ACP63_SDW_ADDR);
 +		u64 sdw_addr = (acp_data->acp_rev < ACP63_PCI_REV) ?

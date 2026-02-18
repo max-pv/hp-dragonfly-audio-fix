@@ -127,7 +127,7 @@ Adding `case 0x60:` to `pci-ps.c` was just the beginning. Every file in the chai
 
 **🔊 SOUND! ACTUAL SOUND! FROM THE SPEAKERS!**
 
-Total: ~15 reboots, 20+ switch statements patched, 9 files modified, 1 UCM profile created, 2 mixer switches unmuted.
+Total: ~15 reboots, 20+ switch statements patched, 10 files modified, 1 UCM profile created, 2 mixer switches unmuted.
 
 ## The Pattern
 

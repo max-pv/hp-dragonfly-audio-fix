@@ -89,7 +89,7 @@ card 1: amdsoundwire [amdsoundwire] ← Our speakers!
 
 Each card has devices:
 - `hw:amdsoundwire,2` = playback through speakers
-- `hw:amdsoundwire,3` = capture from microphone
+- `hw:amdsoundwire,4` = capture from microphone
 
 ALSA also has **mixer controls** — think of them as the knobs on a mixing board:
 

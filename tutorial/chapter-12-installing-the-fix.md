@@ -10,7 +10,7 @@ The complete fix consists of:
 
 | Component | Files | Location |
 |-----------|-------|----------|
-| 7 kernel modules | `.ko.xz` files | `/lib/modules/<kernel-version>/kernel/...` |
+| 8 kernel modules | `.ko.xz` files | `/lib/modules/<kernel-version>/kernel/...` |
 | UCM profile | 2 config files | `/usr/share/alsa/ucm2/conf.d/amd-soundwire/` |
 | modprobe config | 1 config file | `/etc/modprobe.d/hp-dragonfly-audio.conf` |
 
@@ -67,9 +67,11 @@ The UCM files are copied to the ALSA configuration directory:
 /etc/modprobe.d/hp-dragonfly-audio.conf
 ```
 
-Contains: `options snd_acp_sdw_legacy_mach quirk=32768`
+Contains: `options snd_acp_sdw_legacy_mach quirk=32800`
 
-This sets the `ASOC_SDW_CODEC_SPKR` quirk flag, telling the machine driver that this laptop has SoundWire speakers.
+Also contains: `softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma`
+
+Together this enables `ASOC_SDW_CODEC_SPKR | ASOC_SDW_ACP_DMIC` and preloads DMIC/PDM modules so machine-driver registration is stable at boot.
 
 ### Step 5: Rebuild Module Index
 
@@ -166,8 +168,10 @@ sudo depmod -a
 sudo mkdir -p /usr/share/alsa/ucm2/conf.d/amd-soundwire
 sudo cp amd-soundwire.conf HiFi.conf /usr/share/alsa/ucm2/conf.d/amd-soundwire/
 
-# 4. Set modprobe option
-echo 'options snd_acp_sdw_legacy_mach quirk=32768' | \
+# 4. Set modprobe options
+printf '%s\n' \
+    'softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma' \
+    'options snd_acp_sdw_legacy_mach quirk=32800' | \
     sudo tee /etc/modprobe.d/hp-dragonfly-audio.conf
 
 # 5. Reboot
@@ -198,9 +202,19 @@ amixer -c amdsoundwire cget name='rt1316-1 DAC Switch'
 # 5. Play test sound
 speaker-test -D plughw:amdsoundwire,2 -c 2 -t sine -l 1
 
-# 6. Or run the smoke test
+# 6. Check internal mic capture path (should be DMIC device 4)
+arecord -l | grep -A2 -i amdsoundwire
+
+# 7. Record a short mic sample
+arecord -D plughw:amdsoundwire,4 -f S16_LE -c2 -r48000 -d3 /tmp/mic-test.wav
+aplay /tmp/mic-test.wav
+
+# 8. Or run the smoke test
 bash /mnt/audio_issue/test.sh
 ```
+
+If mic level is very low in desktop apps, check your PipeWire source gain.
+GNOME may cap this slider at 100% for this source; use `pactl` for higher boost when needed.
 
 ## Key Takeaways
 

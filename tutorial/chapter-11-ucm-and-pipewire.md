@@ -14,7 +14,11 @@ After all our kernel patches, the situation was:
 - ❌ PipeWire still showed "Dummy Output"
 - ❌ No actual sound from speakers
 
-So the kernel was happy. ALSA was happy. But the user-facing audio system (PipeWire) didn't know what to do with the new hardware. And even when we fixed that, the amplifiers were muted. Two more problems to solve.
+So the kernel was happy. ALSA was happy. But the user-facing audio system (PipeWire) didn't know what to do with the new hardware.  
+And even after we fixed that, we hit two more real-world issues:
+
+- input/output selection in GNOME was coupled (changing one changed the other)
+- mic looked present, but captured from the wrong path
 
 ## Problem 1: The Missing UCM Profile
 
@@ -24,7 +28,7 @@ So the kernel was happy. ALSA was happy. But the user-facing audio system (PipeW
 
 - "Recipe: Speaker" → use PCM device 2, set these mixer controls
 - "Recipe: Headphones" → use PCM device 0, set different mixer controls
-- "Recipe: Microphone" → use capture device 3, enable these inputs
+- "Recipe: Microphone" → use capture device 4, enable these inputs
 
 UCM profiles live in `/usr/share/alsa/ucm2/` and are organized by sound card name:
 
@@ -66,12 +70,9 @@ This just says: "I have one use case called HiFi, and its details are in HiFi.co
 **`HiFi.conf`** — The actual profile:
 ```
 SectionVerb {
-    EnableSequence []
+    EnableSequence [ disdevall "" ]
     DisableSequence []
-    Value {
-        PlaybackPCM "hw:amdsoundwire,2"
-        CapturePCM "hw:amdsoundwire,3"
-    }
+    Value { TQ "HiFi" }
 }
 
 SectionDevice."Speaker" {
@@ -87,7 +88,8 @@ SectionDevice."Speaker" {
         cset "name='Speaker Switch' off"
     ]
     Value {
-        PlaybackPCM "hw:amdsoundwire,2"
+        PlaybackPriority 100
+        PlaybackPCM "hw:${CardId},2"
         PlaybackChannels 2
     }
 }
@@ -97,17 +99,42 @@ SectionDevice."Mic" {
     EnableSequence []
     DisableSequence []
     Value {
-        CapturePCM "hw:amdsoundwire,3"
+        CapturePriority 100
+        CapturePCM "hw:${CardId},4"
         CaptureChannels 2
     }
 }
 ```
 
 Key parts:
-- **PlaybackPCM** tells PipeWire which ALSA device to use for playback (`hw:amdsoundwire,2`)
-- **CapturePCM** tells it which device to use for recording (`hw:amdsoundwire,3`)
+- **PlaybackPCM** tells PipeWire which ALSA device to use for playback (`hw:${CardId},2`)
+- **CapturePCM** tells it which device to use for recording (`hw:${CardId},4`)
 - **EnableSequence** runs ALSA mixer commands when the device is activated (unmutes the DACs!)
 - **DisableSequence** runs commands when deactivated (mutes them)
+
+### Follow-up bug: input/output selection moved together
+
+After an earlier version of this profile, GNOME behaved strangely:
+
+- selecting a different **input** changed **output**
+- selecting a different **output** changed **input**
+
+That happened because we had put both `PlaybackPCM` and `CapturePCM` at the
+global `SectionVerb` level, which made profile policy too coupled.
+
+The fix was to keep `SectionVerb` simple and define playback/capture routes at
+the **device** level (`SectionDevice."Speaker"` and `SectionDevice."Mic"`), each
+with explicit priorities.
+
+### Follow-up bug: mic existed, but was mapped to the wrong PCM
+
+Another easy-to-miss issue: the mic source can appear in UI but still be wrong.
+
+On this laptop:
+- `hw:... ,3` is SoundWire capture from RT1316 path
+- `hw:... ,4` is the actual internal DMIC path (`acp-dmic-codec`)
+
+So the profile must use `CapturePCM "hw:${CardId},4"` for internal mic.
 
 ### How PipeWire Uses UCM
 
@@ -147,7 +174,40 @@ amixer -c amdsoundwire cset name='rt1316-2 DAC Switch' on,on
 
 And then we added these to the UCM profile's `EnableSequence` so they're set automatically when PipeWire activates the speaker device.
 
-> 🔇 **The irony:** After patching 9 kernel files, rebuilding modules, rebooting 15 times, and creating a UCM profile... the final fix was flipping two switches from "off" to "on." Sometimes the simplest problems hide behind the most complex ones.
+> 🔇 **The irony:** After patching 10 kernel files, rebuilding modules, rebooting 15 times, and creating a UCM profile... the final fix was flipping two switches from "off" to "on." Sometimes the simplest problems hide behind the most complex ones.
+
+## Problem 3: Mic works, but is too quiet
+
+After routing was correct, mic capture finally worked — but level was still low.
+
+We checked the driver side first:
+- PDM driver gain (`pdm_gain`) was already at max
+- no extra ALSA hardware boost controls were exposed for this card
+
+So this was mostly a **user-space gain policy** problem, not a broken driver.
+
+### Why it can "go quiet again"
+
+GNOME's input slider for this source is capped at 100%.  
+If you adjust it there, it can reset any higher boost you previously set.
+
+### Practical fix
+
+First find your source name:
+
+```bash
+pactl list short sources
+```
+
+Set source volume above 100% with PipeWire tools:
+
+```bash
+pactl set-source-volume \
+  alsa_input.pci-0000_61_00.5-platform-amd_sdw.HiFi__Mic__source 150%
+```
+
+If you want this to survive login/restarts, run that command from a user
+systemd service at session start.
 
 ## ALSA Mixer Controls Explained
 
@@ -183,10 +243,13 @@ The state is saved to `/var/lib/alsa/asound.state`. Combined with the UCM profil
 - **UCM** (Use Case Manager) tells PipeWire how to use a sound card — which PCM devices, which mixer controls
 - The original UCM was a **broken symlink** pointing to a nonexistent SOF profile
 - We created a **minimal UCM profile** with Speaker and Mic devices
+- Keep playback/capture mapping in `SectionDevice` blocks (not global `SectionVerb`) to avoid linked input/output behavior
+- Internal mic should use `CapturePCM "hw:${CardId},4"` on this machine
 - The RT1316 **DAC switches default to off** — they must be explicitly enabled
 - UCM's `EnableSequence` automatically unmutes the DACs when the speaker is activated
+- Quiet mic after routing was mostly user-space gain policy; PipeWire source gain >100% is a practical workaround
 - `alsactl store/restore` persists mixer settings across reboots
-- The chain: **UCM profile → WirePlumber reads it → PipeWire creates sinks → GNOME shows "Internal Speakers"**
+- The chain: **UCM profile → WirePlumber reads it → PipeWire creates sinks/sources → GNOME shows devices**
 
 ---
 

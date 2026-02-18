@@ -1,0 +1,31 @@
+From: Max <max@fedora>
+Date: Wed, 18 Feb 2026 04:47:00 -0800
+Subject: [PATCH 5/5] ASoC: amd: ps: Use DAI PCM IDs for PDM DMA
+
+When both SoundWire speaker and ACP DMIC links are enabled, ASoC card
+registration can fail with -EBUSY due to a runtime-ID collision between
+the SoundWire DMA and PDM DMA components. SoundWire already uses
+DAI-based PCM IDs; make PDM use the same policy to keep IDs stable and
+non-overlapping.
+
+This fixes intermittent post-boot "Dummy Output" regressions caused by:
+
+  snd_soc_register_card failed -16
+
+Signed-off-by: Max <max@fedora>
+---
+ sound/soc/amd/ps/ps-pdm-dma.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/sound/soc/amd/ps/ps-pdm-dma.c	2026-02-15 16:35:21.026992774 -0800
++++ b/sound/soc/amd/ps/ps-pdm-dma.c	2026-02-18 03:10:00.000000000 -0800
+@@ -352,6 +352,7 @@
+ 	.hw_params	= acp63_pdm_dma_hw_params,
+ 	.pointer	= acp63_pdm_dma_pointer,
+ 	.pcm_construct	= acp63_pdm_dma_new,
++	.use_dai_pcm_id = true,
+ };
+ 
+ static int acp63_pdm_audio_probe(struct platform_device *pdev)
+-- 
+2.48.1

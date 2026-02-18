@@ -94,10 +94,11 @@ For our fix, we use a parameter to tell the machine driver about our speaker set
 
 ```
 # /etc/modprobe.d/hp-dragonfly-audio.conf
-options snd_acp_sdw_legacy_mach quirk=32768
+softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma
+options snd_acp_sdw_legacy_mach quirk=32800
 ```
 
-That `32768` is the `ASOC_SDW_CODEC_SPKR` flag, telling the driver "hey, this machine has SoundWire speakers."
+`quirk=32800` combines `ASOC_SDW_CODEC_SPKR` and `ASOC_SDW_ACP_DMIC`, enabling SoundWire speakers and DMIC capture. The `softdep` line makes sure DMIC-related modules are loaded first so card registration does not race on boot.
 
 ## depmod: The Module Index
 
@@ -111,12 +112,13 @@ This rebuilds the **module dependency index** — a database that tells `modprob
 
 ## What We Changed
 
-For our audio fix, we replaced **7 kernel modules** with patched versions:
+For our audio fix, we replaced **8 kernel modules** with patched versions:
 
 | Module | What We Changed |
 |--------|----------------|
 | `snd-pci-ps.ko.xz` | Accept ACP revision 0x60, fix SoundWire ACPI address |
 | `snd-ps-sdw-dma.ko.xz` | Accept revision 0x60 in DMA configuration |
+| `snd-ps-pdm-dma.ko.xz` | Use DAI-based PCM IDs (prevents DMIC runtime-ID collision) |
 | `soundwire-amd.ko.xz` | Accept revision 0x60 in SoundWire manager |
 | `snd-soc-acpi-amd-match.ko.xz` | Add RT1316 speaker configuration table |
 | `snd-amd-sdw-acpi.ko.xz` | Handle deprecated ACPI property name |

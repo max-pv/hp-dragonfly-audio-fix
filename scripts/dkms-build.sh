@@ -8,7 +8,7 @@
 #   1. Finds kernel source for the target version
 #   2. Copies it to a temp build area
 #   3. Applies the audio patch
-#   4. Builds the 7 modules
+#   4. Builds the 8 modules
 #   5. Copies .ko files to the DKMS build output directory
 
 set -euo pipefail
@@ -108,6 +108,7 @@ mkdir -p "$BUILD_OUT"
 MODULES=(
     "sound/soc/amd/ps/snd-pci-ps.ko"
     "sound/soc/amd/ps/snd-ps-sdw-dma.ko"
+    "sound/soc/amd/ps/snd-ps-pdm-dma.ko"
     "sound/soc/amd/acp/snd-soc-acpi-amd-match.ko"
     "sound/soc/amd/acp/snd-amd-sdw-acpi.ko"
     "sound/soc/amd/acp/snd-acp-sdw-legacy-mach.ko"

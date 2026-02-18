@@ -143,7 +143,7 @@ d) `.mod`
 2. **`depmod -a`**
 3. The kernel's XZ decompressor only supports CRC32 checksums, not the default CRC64
 4. **7** patched modules
-5. It sets the `quirk=32768` parameter for the machine driver, telling it this laptop has SoundWire speakers (`ASOC_SDW_CODEC_SPKR` flag)
+5. It sets machine-driver boot policy: preload `snd_soc_dmic`/`snd_ps_pdm_dma` and apply `quirk=32800` (`ASOC_SDW_CODEC_SPKR | ASOC_SDW_ACP_DMIC`)
 
 </details>
 
@@ -359,7 +359,7 @@ d) It asks PipeWire
 
 **Q3.** What command must be run after installing new module files?
 
-**Q4.** What does the modprobe option `quirk=32768` represent?
+**Q4.** What does the modprobe option `quirk=32800` represent?
 
 <details>
 <summary>Click for answers</summary>
@@ -367,7 +367,7 @@ d) It asks PipeWire
 1. They get **overwritten** by the distribution's original (unpatched) modules — you must re-run the installer
 2. The kernel's XZ decompressor only supports **CRC32** checksums; the default CRC64 causes silent load failures
 3. **`depmod -a`** to rebuild the module dependency index
-4. `32768` = `ASOC_SDW_CODEC_SPKR` flag, telling the machine driver this system has SoundWire speaker amplifiers
+4. It enables SoundWire speakers + ACP DMIC capture (`quirk=32800`) while preloading DMIC/PDM dependencies first to avoid registration races
 
 </details>
 
@@ -421,4 +421,4 @@ Count your correct answers across all quizzes (55 questions total):
 
 ---
 
-[← Previous: Chapter 13](chapter-13-upstream-contributions.md) | [Back to Table of Contents →](README.md)
+[← Previous: Chapter 13](chapter-13-upstream-contributions.md) | **End of tutorial**

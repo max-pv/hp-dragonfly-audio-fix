@@ -2,11 +2,11 @@
 
 ## What This Is
 
-An out-of-tree kernel module patchset that enables internal speaker audio on the HP Dragonfly Pro laptop (AMD Rembrandt ACP 6.0 + 2× Realtek RT1316 SoundWire amplifiers). It patches 7 kernel modules, provides ALSA UCM profiles, and supports DKMS for automatic rebuilds on kernel updates.
+An out-of-tree kernel module patchset that enables internal speaker audio on the HP Dragonfly Pro laptop (AMD Rembrandt ACP 6.0 + 2× Realtek RT1316 SoundWire amplifiers). It patches 8 kernel modules, provides ALSA UCM profiles, and supports DKMS for automatic rebuilds on kernel updates.
 
 ## Architecture
 
-The single source of truth for all code changes is `patches/full-diff.patch` — a unified diff against the upstream kernel tree. The `patches/upstream/` directory contains the same changes split into 4 patches formatted for kernel mailing list submission (generated from the unified patch, not independently maintained).
+The single source of truth for all code changes is `patches/full-diff.patch` — a unified diff against the upstream kernel tree. The `patches/upstream/` directory contains the same changes split into 5 patches formatted for kernel mailing list submission (generated from the unified patch, not independently maintained).
 
 The build system (`scripts/build.sh`) works by applying the patch to a full kernel source tree, then running `make modules` for 4 subdirectories (`sound/soc/amd/ps`, `sound/soc/amd/acp`, `sound/soc/amd/yc`, `drivers/soundwire`). Built modules are xz-compressed with `--check=crc32` (kernel requirement) and placed in `compiled/<kernel-version>/`.
 
@@ -14,7 +14,7 @@ Two install paths exist:
 - **Build-from-source** (`make build && sudo make install`) — any kernel
 - **DKMS** (`sudo make dkms-install`) — auto-rebuilds on kernel updates via `scripts/dkms-build.sh`
 
-The UCM profile (`ucm/`) configures PipeWire/ALSA speaker and mic routing. The modprobe config sets `quirk=32768` on the machine driver.
+The UCM profile (`ucm/`) configures PipeWire/ALSA speaker and mic routing. The modprobe config sets `quirk=32800` and preloads `snd_soc_dmic`/`snd_ps_pdm_dma` before the machine driver.
 
 ## Build Commands
 

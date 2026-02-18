@@ -104,7 +104,7 @@ git config sendemail.smtpServer smtp.example.com
 git config sendemail.smtpServerPort 587
 
 # Generate patches from commits
-git format-patch -4 HEAD
+git format-patch -5 HEAD
 
 # Send them
 git send-email \
@@ -112,15 +112,15 @@ git send-email \
     --cc linux-kernel@vger.kernel.org \
     --cc broonie@kernel.org \
     --cc vkoul@kernel.org \
-    0001-*.patch 0002-*.patch 0003-*.patch 0004-*.patch
+    0001-*.patch 0002-*.patch 0003-*.patch 0004-*.patch 0005-*.patch
 ```
 
 ### The Cover Letter
 
-For a multi-patch series, it's customary to include a **cover letter** (patch 0/4) that explains the overall problem and solution:
+For a multi-patch series, it's customary to include a **cover letter** (patch 0/5) that explains the overall problem and solution:
 
 ```
-Subject: [PATCH 0/4] ASoC/soundwire: amd: Add ACP 6.0 (Rembrandt) SoundWire support
+Subject: [PATCH 0/5] ASoC/soundwire: amd: Add ACP 6.0 (Rembrandt) SoundWire support
 
 The HP Dragonfly Pro Laptop PC uses AMD Rembrandt (ACP revision 0x60)
 with two SoundWire-connected RT1316 speaker amplifiers. Internal 

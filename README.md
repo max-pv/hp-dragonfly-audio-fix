@@ -21,9 +21,9 @@ for SoundWire. This causes:
 
 ## The Fix
 
-This patches **7 kernel modules** across the AMD audio and SoundWire subsystems to
+This patches **8 kernel modules** across the AMD audio and SoundWire subsystems to
 accept ACP revision 0x60, adds a DMI quirk for the HP Dragonfly Pro, and installs an
-ALSA UCM profile so PipeWire can configure the speakers.
+ALSA UCM profile plus modprobe config so PipeWire can configure speakers and mic.
 
 **Modules patched:**
 
@@ -31,11 +31,16 @@ ALSA UCM profile so PipeWire can configure the speakers.
 |--------|-------------|
 | `snd-pci-ps` | ACP PCI platform driver (main entry point) |
 | `snd-ps-sdw-dma` | SoundWire DMA engine |
+| `snd-ps-pdm-dma` | PDM/DMIC DMA engine (runtime-ID fix for mic) |
 | `snd-pci-acp6x` | DMIC-only driver (patched to defer to SoundWire driver) |
 | `snd-soc-acpi-amd-match` | ACPI machine table (RT1316 config added) |
 | `snd-amd-sdw-acpi` | SoundWire ACPI scanner (deprecated property fallback) |
 | `snd-acp-sdw-legacy-mach` | Machine driver (HP Dragonfly DMI quirk added) |
 | `soundwire-amd` | AMD SoundWire manager driver |
+
+The installer writes `/etc/modprobe.d/hp-dragonfly-audio.conf` with:
+- `softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma`
+- `options snd_acp_sdw_legacy_mach quirk=32800`
 
 ---
 
@@ -169,6 +174,9 @@ ls /sys/bus/soundwire/devices/
 # Verify modules loaded
 lsmod | grep -E 'snd_pci_ps|soundwire_amd|snd_acp_sdw'
 
+# Verify modprobe config
+cat /etc/modprobe.d/hp-dragonfly-audio.conf
+
 # Check for errors
 sudo dmesg | grep -iE 'sdw|acp|soundwire' | tail -20
 
@@ -234,7 +242,7 @@ Check current params with `cat /proc/cmdline`.
 │   └── dkms-build.sh      Build script called by DKMS automatically
 ├── patches/
 │   ├── full-diff.patch    Unified patch (source of truth)
-│   └── upstream/          4 split patches for kernel mailing list
+│   └── upstream/          5 split patches for kernel mailing list
 ├── ucm/                   ALSA UCM profile for speaker/mic routing
 │   ├── amd-soundwire.conf
 │   └── HiFi.conf

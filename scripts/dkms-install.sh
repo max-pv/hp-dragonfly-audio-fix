@@ -35,7 +35,10 @@ chmod +x "$DKMS_SRC/scripts/dkms-build.sh"
 mkdir -p "$UCM_DEST"
 cp "$ROOT_DIR/ucm/amd-soundwire.conf" "$UCM_DEST/amd-soundwire.conf"
 cp "$ROOT_DIR/ucm/HiFi.conf" "$UCM_DEST/HiFi.conf"
-echo 'options snd_acp_sdw_legacy_mach quirk=32768' > "$MODPROBE_CONF"
+cat > "$MODPROBE_CONF" <<'EOF'
+softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma
+options snd_acp_sdw_legacy_mach quirk=32800
+EOF
 
 # Register with DKMS (remove first if already registered)
 if dkms status "${DKMS_NAME}/${DKMS_VER}" 2>/dev/null | grep -q "$DKMS_NAME"; then

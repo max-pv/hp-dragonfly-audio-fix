@@ -6,7 +6,7 @@
 
 ## Overview
 
-We modified **9 kernel source files** and created **2 userspace configuration files**. Let's go through each one.
+We modified **10 kernel source files** and created **2 userspace configuration files**. Let's go through each one.
 
 ## Patch 1: `pci-ps.c` — The Main Driver
 
@@ -214,6 +214,21 @@ Three more `case 0x60:` additions, plus the DMI quirk entry:
 
 This tells the machine driver: "On this specific HP laptop, set the `CODEC_SPKR` flag" — which triggers the SoundWire speaker DAI link creation.
 
+## Patch 10: `ps-pdm-dma.c` — DMIC Runtime-ID Collision Fix
+
+**File:** `sound/soc/amd/ps/ps-pdm-dma.c`  
+**What it is:** The PDM/DMIC DMA component used for internal microphone capture.
+
+```c
+// Added in acp63_pdm_component:
+.use_dai_pcm_id = true,
+```
+
+**Why:** After enabling both speaker + DMIC links, the machine card failed with
+`snd_soc_register_card failed -16` (busy), which caused "Dummy Output" on boot.
+Root cause was a PCM runtime ID collision between SoundWire and PDM paths.
+Setting `use_dai_pcm_id` for PDM makes runtime IDs deterministic and non-overlapping.
+
 ## The Complete Picture
 
 Here's a visual of which file handles which part of the audio path:
@@ -227,7 +242,8 @@ Application → PipeWire → ALSA
                            ↓
               pci-ps.c               ←── Platform driver (PCI probe + setup)
                            ↓
-              ps-sdw-dma.c           ←── DMA engine (data transfer)
+              ps-sdw-dma.c           ←── SoundWire DMA engine (speaker path)
+              ps-pdm-dma.c           ←── PDM DMA engine (mic path)
                            ↓
               amd_manager.c          ←── SoundWire bus controller
                            ↓
@@ -242,12 +258,13 @@ We patched every layer except the RT1316 codec driver itself (which already work
 
 ## Key Takeaways
 
-- **9 files modified**, each addressing a specific layer of the stack
+- **10 files modified**, each addressing a specific layer of the stack
 - The most common change: adding `case 0x60:` to `switch` statements (~20 total)
 - The ACPI address fix and property name fallback addressed BIOS differences
 - The machine table entry taught the kernel about our specific codec combination
 - The DMI quirk identifies our specific laptop model
 - The driver conflict fix uses ACPI detection (clean) rather than model hardcoding (hacky)
+- The final stability fix removed a DMIC/SDW runtime-ID collision that caused `-16` card registration failures
 - Every patch is **minimal and upstreamable** — no ugly workarounds
 
 ---
