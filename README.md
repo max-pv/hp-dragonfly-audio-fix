@@ -50,12 +50,13 @@ The installer writes `/etc/modprobe.d/hp-dragonfly-audio.conf` with:
 ### Prerequisites
 
 - `git`, `gcc`, `make`, `patch`, `xz` (install via your distro's package manager)
-- A **full kernel source tree** (not just headers — see [Getting Kernel Source](#getting-kernel-source) below)
+- A **full distro-matched kernel source tree** (not just headers — see [Getting Kernel Source](#getting-kernel-source) below)
 
 ### Build & Install
 
 ```bash
-make build KSRC=/path/to/linux-source
+KSRC="$(./scripts/fetch-kernel-source.sh --print-path)"
+make build KSRC="$KSRC"
 sudo make install
 sudo reboot
 ```
@@ -78,39 +79,40 @@ The build requires a **full kernel source tree** from your **distro** (not vanil
 kernel.org). Distros patch the kernel with ABI-changing modifications — building
 against vanilla source produces modules that fail to load.
 
-**Fedora / RHEL / CentOS:**
+> **Important:** `/usr/src/kernels/$(uname -r)` is usually a headers/build tree, not
+> full source. Do not use it directly as `KSRC` for this project.
+
+### Recommended (automated)
+
+Use the helper script to download and prepare source for your running kernel:
 
 ```bash
-# Install the source RPM for your running kernel
-koji download-build --arch=src kernel-$(uname -r | sed 's/\.fc.*/.fc$(rpm -E %fedora)/')
-# Or download from https://koji.fedoraproject.org/
+KSRC="$(./scripts/fetch-kernel-source.sh --print-path)"
+make build KSRC="$KSRC"
+```
 
-# Extract and prepare
-rpm2cpio kernel-*.src.rpm | cpio -idmv
+The script currently supports:
+- Fedora/RHEL-like distros (`dnf` source repos or `koji` fallback)
+- Debian/Ubuntu (`apt source`, with `deb-src` enabled)
+
+### Manual fallback (Fedora / RHEL / CentOS)
+
+```bash
+# Download matching source RPM
+koji download-build --arch=src kernel-$(uname -r)
+
+# Extract + patch distro tree
+rpm2cpio kernel-$(uname -r).src.rpm | cpio -idmv
 tar xf linux-$(uname -r | cut -d- -f1).tar.xz
 cd linux-$(uname -r | cut -d- -f1)
-patch -p1 < ../patch-*-redhat.patch  # Apply distro patches
-cp Makefile.rhelver .                 # Copy version metadata
+patch -p1 < ../patch-*-redhat.patch
+cp ../Makefile.rhelver .  # if present
 ```
 
-**Ubuntu / Debian:**
+Then build:
 
 ```bash
-apt source linux-image-$(uname -r)
-```
-
-**Arch Linux:**
-
-```bash
-asp checkout linux
-cd linux/trunk
-makepkg --nobuild  # Downloads and patches source
-```
-
-**If you already have distro-matched source** (e.g., `~/linux/`):
-
-```bash
-make build KSRC=~/linux
+make build KSRC=/path/to/linux-source
 ```
 
 ---
@@ -196,7 +198,9 @@ Your kernel was updated and the patched modules were replaced:
 ### Build fails
 
 - Use your **distro's** kernel source, not vanilla kernel.org (see above)
-- Check that the patch applies cleanly (it was written for kernel 6.18.9)
+- Do not point `KSRC` to `/usr/src/kernels/<version>` (headers-only tree)
+- Use `./scripts/fetch-kernel-source.sh --print-path` to get a prepared source tree
+- If patch apply fails on a newer kernel, refresh patch context in `patches/full-diff.patch`
 
 ### Modules fail to load ("section size must match" or "version magic" errors)
 
@@ -235,6 +239,7 @@ Check current params with `cat /proc/cmdline`.
 ├── Makefile               Build/install/DKMS targets (thin wrappers)
 ├── dkms.conf              DKMS configuration
 ├── scripts/
+│   ├── fetch-kernel-source.sh  Download/prepare distro-matched kernel source
 │   ├── build.sh           Build patched modules from kernel source
 │   ├── install.sh         Install modules + UCM + modprobe config
 │   ├── uninstall.sh       Restore original modules from backup
@@ -269,7 +274,7 @@ identifying the bug to writing the patch. Start with
 | PCI Device | 1022:15e2 rev 0x60 |
 | Codecs | 2× Realtek RT1316 (SoundWire) |
 | ACPI Path | `\_SB_.PCI0.GP17.ACP_.SDWC` |
-| Tested Kernel | 6.18.9-200.fc43.x86_64 |
+| Tested Kernels | 6.18.9-200.fc43.x86_64, 6.18.12-200.fc43.x86_64 |
 
 TODO: Upstream submission and generalization
 

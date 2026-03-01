@@ -77,9 +77,11 @@ find_kernel_source() {
         fi
     done
 
-    error "Could not find kernel source tree with AMD audio sources.
-You need the full kernel source from your distro (not vanilla kernel.org).
-See README.md for distro-specific instructions.
+    error "Could not find a full kernel source tree with AMD audio sources.
+Do not use /usr/src/kernels/<kver> (headers-only tree).
+
+Recommended:
+  ./scripts/fetch-kernel-source.sh --print-path
 
 Then re-run:
   $0 KSRC=/path/to/linux"

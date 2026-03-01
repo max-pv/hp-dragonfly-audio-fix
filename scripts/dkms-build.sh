@@ -40,12 +40,11 @@ find_kernel_source() {
     done
 
     # No full source tree found
-    die "No kernel source tree found for version $base_ver.
+    die "No full kernel source tree found for version $base_ver.
 
-DKMS needs the full kernel source from your distro (not vanilla kernel.org).
-See README.md for distro-specific instructions.
-
-Then retry: sudo dkms build hp-dragonfly-audio/1.0 -k $KVER"
+Do not use /usr/src/kernels/<kver> (headers-only tree).
+Use ./scripts/fetch-kernel-source.sh to prepare source first, then retry:
+sudo dkms build hp-dragonfly-audio/1.0 -k $KVER"
 }
 
 # ── Main build ───────────────────────────────────────────────────────────

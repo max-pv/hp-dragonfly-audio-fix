@@ -1,6 +1,10 @@
 KVER ?= $(shell uname -r)
 
-.PHONY: build install uninstall dkms-install dkms-remove clean
+.PHONY: source build install uninstall dkms-install dkms-remove clean
+
+# Download and prepare distro-matched kernel source
+source:
+	@./scripts/fetch-kernel-source.sh $(if $(KVER),--kver $(KVER))
 
 # Build patched modules from kernel source
 build:
