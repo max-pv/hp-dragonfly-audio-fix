@@ -1,18 +1,25 @@
 #!/bin/bash
-# uninstall.sh — Restore original kernel modules and remove config
+# uninstall.sh — Restore original kernel modules and remove installed extras
 #
-# Usage: sudo ./scripts/uninstall.sh [kernel-version]
+# Usage: sudo ./scripts/uninstall.sh [kernel-version] [EXTRA=<profile>]
 
 set -euo pipefail
 
 KVER="${1:-$(uname -r)}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXTRA_PROFILE=""
+for arg in "$@"; do
+    case "$arg" in
+        EXTRA=*) EXTRA_PROFILE="${arg#EXTRA=}" ;;
+    esac
+done
 
 MODDIR="/lib/modules/$KVER/kernel"
 BACKUP_DIR="$ROOT_DIR/compiled/backup-$KVER"
 UCM_DEST="/usr/share/alsa/ucm2/conf.d/amd-soundwire"
-MODPROBE_CONF="/etc/modprobe.d/hp-dragonfly-audio.conf"
+STATE_DIR="/var/lib/rembrandt-sdw-fix"
+STATE_FILE="$STATE_DIR/extra-profile"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -50,9 +57,25 @@ else
     warn "Skipping module restore. Reinstall your kernel's modules package to restore originals."
 fi
 
-# Remove config files
-rm -f "$MODPROBE_CONF"
-rm -rf "$UCM_DEST"
+# Determine installed extra profile when not explicitly provided
+if [[ -z "$EXTRA_PROFILE" && -f "$STATE_FILE" ]]; then
+    EXTRA_PROFILE="$(cat "$STATE_FILE" | tr -d '[:space:]')"
+fi
+
+# Remove extra profile files
+if [[ -n "$EXTRA_PROFILE" ]]; then
+    EXTRA_DIR="$ROOT_DIR/extras/$EXTRA_PROFILE"
+    if [[ -d "$EXTRA_DIR/modprobe.d" ]]; then
+        while IFS= read -r conf; do
+            rm -f "/etc/modprobe.d/$(basename "$conf")"
+        done < <(find "$EXTRA_DIR/modprobe.d" -maxdepth 1 -type f -name '*.conf' | sort)
+    fi
+    if [[ -d "$EXTRA_DIR/ucm" ]]; then
+        rm -rf "$UCM_DEST"
+    fi
+fi
+
+rm -f "$STATE_FILE"
 depmod -a "$KVER"
 
 echo ""

@@ -5,9 +5,10 @@
 
 set -euo pipefail
 
-DKMS_NAME="hp-dragonfly-audio"
+DKMS_NAME="amd-rembrandt-sdw-fix"
 DKMS_VER="1.0"
 DKMS_SRC="/usr/src/${DKMS_NAME}-${DKMS_VER}"
+STATE_FILE="/var/lib/rembrandt-sdw-fix/extra-profile"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -21,6 +22,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 info "Removing DKMS package ${DKMS_NAME}/${DKMS_VER}..."
 dkms remove "${DKMS_NAME}/${DKMS_VER}" --all 2>/dev/null || true
 rm -rf "$DKMS_SRC"
+rm -f "$STATE_FILE"
 
 info "✓ DKMS package removed."
 info "  Note: UCM profile and modprobe config are still installed."

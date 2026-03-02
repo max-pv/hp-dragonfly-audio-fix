@@ -1,19 +1,26 @@
 #!/bin/bash
-# install.sh — Install patched audio modules, UCM profile, and modprobe config
+# install.sh — Install patched audio modules and optional machine extras
 #
-# Usage: sudo ./scripts/install.sh [kernel-version]
+# Usage: sudo ./scripts/install.sh [kernel-version] [EXTRA=<profile>]
 
 set -euo pipefail
 
 KVER="${1:-$(uname -r)}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXTRA_PROFILE=""
+for arg in "$@"; do
+    case "$arg" in
+        EXTRA=*) EXTRA_PROFILE="${arg#EXTRA=}" ;;
+    esac
+done
 
 MODDIR="/lib/modules/$KVER/kernel"
 COMPILED="$ROOT_DIR/compiled/$KVER"
 BACKUP_DIR="$ROOT_DIR/compiled/backup-$KVER"
 UCM_DEST="/usr/share/alsa/ucm2/conf.d/amd-soundwire"
-MODPROBE_CONF="/etc/modprobe.d/hp-dragonfly-audio.conf"
+STATE_DIR="/var/lib/rembrandt-sdw-fix"
+STATE_FILE="$STATE_DIR/extra-profile"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -58,17 +65,26 @@ for mod in "${!MODULES[@]}"; do
     info "  Installed: $mod → ${MODULES[$mod]}/"
 done
 
-# Install UCM profile
-info "Installing UCM profile..."
-mkdir -p "$UCM_DEST"
-cp "$ROOT_DIR/ucm/amd-soundwire.conf" "$UCM_DEST/amd-soundwire.conf"
-cp "$ROOT_DIR/ucm/HiFi.conf" "$UCM_DEST/HiFi.conf"
+if [[ -n "$EXTRA_PROFILE" ]]; then
+    EXTRA_DIR="$ROOT_DIR/extras/$EXTRA_PROFILE"
+    [[ -d "$EXTRA_DIR" ]] || error "Extra profile not found: $EXTRA_PROFILE"
 
-# Install modprobe config
-cat > "$MODPROBE_CONF" <<'EOF'
-softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma
-options snd_acp_sdw_legacy_mach quirk=32800
-EOF
+    info "Installing extra profile: $EXTRA_PROFILE"
+    if [[ -d "$EXTRA_DIR/ucm" ]]; then
+        mkdir -p "$UCM_DEST"
+        while IFS= read -r f; do
+            cp "$f" "$UCM_DEST/"
+        done < <(find "$EXTRA_DIR/ucm" -maxdepth 1 -type f | sort)
+    fi
+    if [[ -d "$EXTRA_DIR/modprobe.d" ]]; then
+        while IFS= read -r f; do
+            cp "$f" /etc/modprobe.d/
+        done < <(find "$EXTRA_DIR/modprobe.d" -maxdepth 1 -type f -name '*.conf' | sort)
+    fi
+fi
+
+mkdir -p "$STATE_DIR"
+printf '%s\n' "$EXTRA_PROFILE" > "$STATE_FILE"
 
 # Rebuild module dependencies
 depmod -a "$KVER"
@@ -76,3 +92,6 @@ depmod -a "$KVER"
 echo ""
 info "✓ Installation complete! Reboot to activate."
 info "  Backup saved to: $BACKUP_DIR/"
+if [[ -n "$EXTRA_PROFILE" ]]; then
+    info "  Extra profile installed: $EXTRA_PROFILE"
+fi

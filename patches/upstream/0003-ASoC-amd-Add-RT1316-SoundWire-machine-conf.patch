@@ -1,0 +1,166 @@
+From 26ff016481937be5673003ae4a8e531f8dca7c18 Mon Sep 17 00:00:00 2001
+From: Max Pimenov <max.a.pimenov@gmail.com>
+Date: Sun, 1 Mar 2026 15:36:48 -0800
+Subject: [PATCH 3/6] ASoC: amd: Add RT1316 SoundWire machine config
+
+Signed-off-by: Max Pimenov <max.a.pimenov@gmail.com>
+
+diff --git a/sound/soc/amd/acp/acp-sdw-legacy-mach.c b/sound/soc/amd/acp/acp-sdw-legacy-mach.c
+index 5a3cfed..d7aa0ed 100644
+--- a/sound/soc/amd/acp/acp-sdw-legacy-mach.c
++++ b/sound/soc/amd/acp/acp-sdw-legacy-mach.c
+@@ -166,6 +166,8 @@ static int create_sdw_dailink(struct snd_soc_card *card,
+ 		}
+ 
+ 		switch (amd_ctx->acp_rev) {
++		case ACP60_PCI_REV:
++		case ACP6F_PCI_REV:
+ 		case ACP63_PCI_REV:
+ 			ret = get_acp63_cpu_pin_id(ffs(soc_end->link_mask - 1),
+ 						   *be_id, &cpu_pin_id, dev);
+@@ -278,6 +280,8 @@ static int create_sdw_dailinks(struct snd_soc_card *card,
+ 		return -ENOMEM;
+ 
+ 	switch (amd_ctx->acp_rev) {
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
+ 	case ACP63_PCI_REV:
+ 	case ACP70_PCI_REV:
+ 	case ACP71_PCI_REV:
+@@ -326,6 +330,8 @@ static int create_dmic_dailinks(struct snd_soc_card *card,
+ 		return -ENOMEM;
+ 
+ 	switch (amd_ctx->acp_rev) {
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
+ 	case ACP63_PCI_REV:
+ 	case ACP70_PCI_REV:
+ 	case ACP71_PCI_REV:
+@@ -358,12 +364,11 @@ static int soc_card_dai_links_create(struct snd_soc_card *card)
+ 	int sdw_be_num = 0, dmic_num = 0;
+ 	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+ 	struct snd_soc_acpi_mach_params *mach_params = &mach->mach_params;
+-	struct asoc_sdw_endpoint *soc_ends __free(kfree) = NULL;
+-	struct asoc_sdw_dailink *soc_dais __free(kfree) = NULL;
+ 	struct snd_soc_codec_conf *codec_conf;
+ 	struct snd_soc_dai_link *dai_links;
+ 	int num_devs = 0;
+ 	int num_ends = 0;
++	int num_confs;
+ 	int num_links;
+ 	int be_id = 0;
+ 	int ret;
+@@ -374,17 +379,21 @@ static int soc_card_dai_links_create(struct snd_soc_card *card)
+ 		return ret;
+ 	}
+ 
++	num_confs = num_ends;
++
+ 	/* One per DAI link, worst case is a DAI link for every endpoint */
+-	soc_dais = kcalloc(num_ends, sizeof(*soc_dais), GFP_KERNEL);
++	struct asoc_sdw_dailink *soc_dais __free(kfree) =
++		kcalloc(num_ends, sizeof(*soc_dais), GFP_KERNEL);
+ 	if (!soc_dais)
+ 		return -ENOMEM;
+ 
+ 	/* One per endpoint, ie. each DAI on each codec/amp */
+-	soc_ends = kcalloc(num_ends, sizeof(*soc_ends), GFP_KERNEL);
++	struct asoc_sdw_endpoint *soc_ends __free(kfree) =
++		kcalloc(num_ends, sizeof(*soc_ends), GFP_KERNEL);
+ 	if (!soc_ends)
+ 		return -ENOMEM;
+ 
+-	ret = asoc_sdw_parse_sdw_endpoints(card, soc_dais, soc_ends, &num_devs);
++	ret = asoc_sdw_parse_sdw_endpoints(card, soc_dais, soc_ends, &num_confs);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -396,7 +405,7 @@ static int soc_card_dai_links_create(struct snd_soc_card *card)
+ 
+ 	dev_dbg(dev, "sdw %d, dmic %d", sdw_be_num, dmic_num);
+ 
+-	codec_conf = devm_kcalloc(dev, num_devs, sizeof(*codec_conf), GFP_KERNEL);
++	codec_conf = devm_kcalloc(dev, num_confs, sizeof(*codec_conf), GFP_KERNEL);
+ 	if (!codec_conf)
+ 		return -ENOMEM;
+ 
+@@ -407,7 +416,7 @@ static int soc_card_dai_links_create(struct snd_soc_card *card)
+ 		return -ENOMEM;
+ 
+ 	card->codec_conf = codec_conf;
+-	card->num_configs = num_devs;
++	card->num_configs = num_confs;
+ 	card->dai_link = dai_links;
+ 	card->num_links = num_links;
+ 
+@@ -463,6 +472,10 @@ static int mc_probe(struct platform_device *pdev)
+ 	card->late_probe = asoc_sdw_card_late_probe;
+ 
+ 	snd_soc_card_set_drvdata(card, ctx);
++	if (mach->mach_params.subsystem_id_set)
++		snd_soc_card_set_pci_ssid(card,
++					  mach->mach_params.subsystem_vendor,
++					  mach->mach_params.subsystem_device);
+ 
+ 	dmi_check_system(soc_sdw_quirk_table);
+ 
+diff --git a/sound/soc/amd/acp/amd-acp63-acpi-match.c b/sound/soc/amd/acp/amd-acp63-acpi-match.c
+index 9b6a49c..1b452ef 100644
+--- a/sound/soc/amd/acp/amd-acp63-acpi-match.c
++++ b/sound/soc/amd/acp/amd-acp63-acpi-match.c
+@@ -112,6 +112,30 @@ static const struct snd_soc_acpi_link_adr acp63_rt722_only[] = {
+ 	{}
+ };
+ 
++static const struct snd_soc_acpi_adr_device rt1316_only_group_adr[] = {
++	{
++		.adr = 0x000030025D131601ull,
++		.num_endpoints = 1,
++		.endpoints = &spk_l_endpoint,
++		.name_prefix = "rt1316-1"
++	},
++	{
++		.adr = 0x000031025D131601ull,
++		.num_endpoints = 1,
++		.endpoints = &spk_r_endpoint,
++		.name_prefix = "rt1316-2"
++	},
++};
++
++static const struct snd_soc_acpi_link_adr acp63_rt1316_only[] = {
++	{
++		.mask = BIT(0),
++		.num_adr = ARRAY_SIZE(rt1316_only_group_adr),
++		.adr_d = rt1316_only_group_adr,
++	},
++	{}
++};
++
+ struct snd_soc_acpi_mach snd_soc_acpi_amd_acp63_sof_sdw_machines[] = {
+ 	{
+ 		.link_mask = BIT(0) | BIT(1),
+@@ -125,6 +149,11 @@ struct snd_soc_acpi_mach snd_soc_acpi_amd_acp63_sof_sdw_machines[] = {
+ EXPORT_SYMBOL(snd_soc_acpi_amd_acp63_sof_sdw_machines);
+ 
+ struct snd_soc_acpi_mach snd_soc_acpi_amd_acp63_sdw_machines[] = {
++	{
++		.link_mask = BIT(0),
++		.links = acp63_rt1316_only,
++		.drv_name = "amd_sdw",
++	},
+ 	{
+ 		.link_mask = BIT(0),
+ 		.links = acp63_rt722_only,
+diff --git a/sound/soc/amd/acp/soc_amd_sdw_common.h b/sound/soc/amd/acp/soc_amd_sdw_common.h
+index 3930cc4..4835fa9 100644
+--- a/sound/soc/amd/acp/soc_amd_sdw_common.h
++++ b/sound/soc/amd/acp/soc_amd_sdw_common.h
+@@ -18,6 +18,8 @@
+ #define ACP63_SDW_MAX_LINKS		2
+ 
+ #define AMD_SDW_MAX_GROUPS		9
++#define ACP60_PCI_REV			0x60
++#define ACP6F_PCI_REV			0x6f
+ #define ACP63_PCI_REV			0x63
+ #define ACP70_PCI_REV			0x70
+ #define ACP71_PCI_REV			0x71

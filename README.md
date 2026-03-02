@@ -1,284 +1,197 @@
-# HP Dragonfly Pro Audio Fix
+# AMD Rembrandt SoundWire Audio Fix
 
-Enables internal speaker audio on the **HP Dragonfly Pro Laptop PC** running Linux.
+Enable internal SoundWire audio on AMD Rembrandt platforms where ACP revision `0x60`/`0x6f`
+is rejected by drivers that only accept ACP `0x63`.
 
-> **Temporary repo** — this exists until the patches are accepted upstream into the
-> Linux kernel.
+> **Warning:** This project replaces in-kernel modules. Use at your own risk.
 
-> **⚠️ WARNING: This software replaces kernel modules. Incorrect modifications can
-> render your system unbootable. Use entirely at your own risk.**
+---
 
-## The Problem
+## What this fixes (generic)
 
-The HP Dragonfly Pro uses AMD Rembrandt (ACP revision 0x60) with two Realtek RT1316
-SoundWire speaker amplifiers. The Linux kernel recognizes ACP 6.3 (Phoenix, rev 0x63)
-but not ACP 6.0 (Rembrandt, rev 0x60), even though they use identical register layouts
-for SoundWire. This causes:
+This patch set is designed for **Rembrandt ACP 6.x systems** where the hardware is
+register-compatible with ACP `0x63` but firmware/kernel combinations still fail to
+enumerate SoundWire properly.
 
-- No internal speaker output (HDMI, USB-C, and DMIC still work)
-- PipeWire shows "Dummy Output" instead of speakers
-- `/sys/bus/soundwire/devices` is empty
+Typical symptoms:
+- No internal speaker output
+- PipeWire fallback to dummy output
+- No SoundWire slave devices under `/sys/bus/soundwire/devices`
 
-## The Fix
+Core fix scope:
+- ACP revision compatibility (`0x60`/`0x6f` paths)
+- SoundWire manager bring-up
+- ACPI property fallback (`mipi-sdw-master-list`)
+- Runtime-ID collision fix for DMIC path
 
-This patches **8 kernel modules** across the AMD audio and SoundWire subsystems to accept ACP revision 0x60, and installs an
-ALSA UCM profile plus modprobe config so PipeWire can configure speakers and mic.
+---
 
-The patchset is split: generic Rembrandt (ACP 6.0 / rev 0x60) support where possible; only a small machine-specific DMI quirk targets the HP Dragonfly Pro (subsystem 0x103c:0x8a7f).
+## Machine-specific extras
 
-**Modules patched:**
+Some laptops need additional quirks beyond the generic patch set.
 
-| Module | What it does |
-|--------|-------------|
-| `snd-pci-ps` | ACP PCI platform driver (main entry point) |
-| `snd-ps-sdw-dma` | SoundWire DMA engine |
-| `snd-ps-pdm-dma` | PDM/DMIC DMA engine (runtime-ID fix for mic) |
-| `snd-pci-acp6x` | DMIC-only driver (patched to defer to SoundWire driver) |
-| `snd-soc-acpi-amd-match` | ACPI machine table (RT1316 config added) |
-| `snd-amd-sdw-acpi` | SoundWire ACPI scanner (deprecated property fallback) |
-| `snd-acp-sdw-legacy-mach` | Machine driver (HP Dragonfly DMI quirk added) |
-| `soundwire-amd` | AMD SoundWire manager driver |
+This repo separates those quirks into **extra profiles** under `extras/`.
 
-The installer writes `/etc/modprobe.d/hp-dragonfly-audio.conf` with:
-- `softdep snd_acp_sdw_legacy_mach pre: snd_soc_dmic snd_ps_pdm_dma`
-- `options snd_acp_sdw_legacy_mach quirk=32800`
+Available profile:
+- `hp-dragonfly-pro`
+
+Use extras by passing `EXTRA=<profile>` to build/install targets.
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-
-- `git`, `gcc`, `make`, `patch`, `xz` (install via your distro's package manager)
-- A **full distro-matched kernel source tree** (not just headers — see [Getting Kernel Source](#getting-kernel-source) below)
-
-### Build & Install
+### 1) Prepare kernel source (automated)
 
 ```bash
 KSRC="$(./scripts/fetch-kernel-source.sh --print-path)"
+```
+
+Supported in `fetch-kernel-source.sh`:
+- Fedora/RHEL-like (`dnf`/`koji` SRPM flow)
+- Debian/Ubuntu (`apt source`)
+- Arch-like (`pkgctl`/`asp` + `makepkg --nobuild`)
+
+### 2) Build and install generic fix
+
+```bash
 make build KSRC="$KSRC"
 sudo make install
 sudo reboot
 ```
 
-### DKMS (Recommended — survives kernel updates)
+### 3) Build and install with machine extras (example)
 
 ```bash
-sudo make dkms-install
+make build KSRC="$KSRC" EXTRA=hp-dragonfly-pro
+sudo make install EXTRA=hp-dragonfly-pro
 sudo reboot
 ```
 
-After rebooting, select **"Internal Speakers — Audio Coprocessor"** in your desktop's
-sound settings.
-
----
-
-## Getting Kernel Source
-
-The build requires a **full kernel source tree** from your **distro** (not vanilla
-kernel.org). Distros patch the kernel with ABI-changing modifications — building
-against vanilla source produces modules that fail to load.
-
-> **Important:** `/usr/src/kernels/$(uname -r)` is usually a headers/build tree, not
-> full source. Do not use it directly as `KSRC` for this project.
-
-### Recommended (automated)
-
-Use the helper script to download and prepare source for your running kernel:
+Convenience target:
 
 ```bash
-KSRC="$(./scripts/fetch-kernel-source.sh --print-path)"
-make build KSRC="$KSRC"
-```
-
-The script currently supports:
-- Fedora/RHEL-like distros (`dnf` source repos or `koji` fallback)
-- Debian/Ubuntu (`apt source`, with `deb-src` enabled)
-
-### Manual fallback (Fedora / RHEL / CentOS)
-
-```bash
-# Download matching source RPM
-koji download-build --arch=src kernel-$(uname -r)
-
-# Extract + patch distro tree
-rpm2cpio kernel-$(uname -r).src.rpm | cpio -idmv
-tar xf linux-$(uname -r | cut -d- -f1).tar.xz
-cd linux-$(uname -r | cut -d- -f1)
-patch -p1 < ../patch-*-redhat.patch
-cp ../Makefile.rhelver .  # if present
-```
-
-Then build:
-
-```bash
-make build KSRC=/path/to/linux-source
+make hp-dragonfly-pro KSRC="$KSRC"
 ```
 
 ---
 
-## Build Commands
+## Kernel source notes
 
-```bash
-# Build for current running kernel
-make build KSRC=/path/to/linux-source
-
-# Build for a specific kernel version
-make build KSRC=/path/to/linux-source KVER=6.18.9-200.fc43.x86_64
-
-# Install
-sudo make install
-
-# Uninstall (restores original modules from backup)
-sudo make uninstall
-
-# Clean build artifacts
-make clean
-```
+- Do **not** use `/usr/src/kernels/$(uname -r)` directly as `KSRC` (headers/build tree only).
+- Prefer `./scripts/fetch-kernel-source.sh`.
+- Manual fallback instructions are in:
+  - `docs/kernel-source-manual.md`
 
 ---
 
 ## DKMS
 
-DKMS (Dynamic Kernel Module Support) automatically rebuilds these modules when you
-install a new kernel. This means your speakers continue working after kernel updates.
+Install DKMS build/rebuild support:
 
 ```bash
-# Install
 sudo make dkms-install
-sudo reboot
+```
 
-# Check status
-dkms status
+With extras:
 
-# Remove
+```bash
+sudo make dkms-install EXTRA=hp-dragonfly-pro
+```
+
+Remove DKMS registration:
+
+```bash
 sudo make dkms-remove
 ```
 
-DKMS copies the patch and build script to `/usr/src/hp-dragonfly-audio-1.0/`. When a
-new kernel is installed, it automatically patches, builds, and installs the modules.
+---
 
-**Note:** DKMS still needs the full distro kernel source at build time. Keep a source
-tree at `/usr/src/linux-<version>/` or `~/linux-<version>/` for each kernel you run.
+## Validation
+
+### Basic runtime checks
+
+```bash
+ls /sys/bus/soundwire/devices/
+aplay -l
+arecord -l
+```
+
+### Patch/harness checks
+
+```bash
+make test
+make test EXTRA=hp-dragonfly-pro
+
+# Equivalent direct harness commands:
+./testing/run-harness.sh
+./testing/run-harness.sh --extra hp-dragonfly-pro
+```
+
+Optional build smoke in harness:
+
+```bash
+make test EXTRA=hp-dragonfly-pro TEST_BUILD=1
+```
 
 ---
 
 ## Troubleshooting
 
-### No sound after reboot
+### Build failed with missing source files
+
+Use:
 
 ```bash
-# Check sound card detected
-aplay -l | grep -i soundwire
+./scripts/fetch-kernel-source.sh --print-path
+```
 
-# Check SoundWire devices
+### Modules fail to load (vermagic / section size mismatch)
+
+Source tree does not match distro ABI. Rebuild with distro-matched source via
+`fetch-kernel-source.sh`.
+
+### Dummy output after install
+
+Check:
+
+```bash
+lspci -nnk -s 61:00.5
 ls /sys/bus/soundwire/devices/
-
-# Verify modules loaded
-lsmod | grep -E 'snd_pci_ps|soundwire_amd|snd_acp_sdw'
-
-# Verify modprobe config
-cat /etc/modprobe.d/hp-dragonfly-audio.conf
-
-# Check for errors
-sudo dmesg | grep -iE 'sdw|acp|soundwire' | tail -20
-
-# Unmute RT1316 DACs if needed
-amixer -c amdsoundwire cset name='rt1316-1 DAC Switch' on,on
-amixer -c amdsoundwire cset name='rt1316-2 DAC Switch' on,on
 ```
 
-### Modules don't load after kernel update
-
-Your kernel was updated and the patched modules were replaced:
-
-- **With DKMS:** `sudo dkms build hp-dragonfly-audio/1.0 -k $(uname -r) && sudo dkms install hp-dragonfly-audio/1.0 -k $(uname -r)`
-- **Without DKMS:** `make build KSRC=/path/to/source && sudo make install`
-
-### Build fails
-
-- Use your **distro's** kernel source, not vanilla kernel.org (see above)
-- Do not point `KSRC` to `/usr/src/kernels/<version>` (headers-only tree)
-- Use `./scripts/fetch-kernel-source.sh --print-path` to get a prepared source tree
-- If patch apply fails on a newer kernel, refresh patch context in `patches/full-diff.patch`
-
-### Modules fail to load ("section size must match" or "version magic" errors)
-
-Your modules were built against the wrong kernel source. Distros add ABI-changing
-patches (e.g., extra fields in `struct module`). Rebuild using your distro's kernel
-source tree.
-
-### PipeWire shows "Dummy Output"
+Then restart user audio services:
 
 ```bash
-# Verify UCM profile is installed
-ls /usr/share/alsa/ucm2/conf.d/amd-soundwire/
-# Should contain: amd-soundwire.conf, HiFi.conf
-
-# Restart PipeWire
-systemctl --user restart pipewire pipewire-pulse wireplumber
+systemctl --user restart wireplumber pipewire pipewire-pulse
 ```
-
-### SoundWire devices not appearing
-
-If `/sys/bus/soundwire/devices/` is empty even after installing the patched modules,
-your BIOS may need ACPI hints. Try adding these kernel boot parameters:
-
-```bash
-sudo grubby --update-kernel=ALL --args='acpi_osi="Windows 2020" acpi=force'
-sudo reboot
-```
-
-Check current params with `cat /proc/cmdline`.
 
 ---
 
-## Directory Layout
+## Repository layout
 
-```
-├── Makefile               Build/install/DKMS targets (thin wrappers)
-├── dkms.conf              DKMS configuration
-├── scripts/
-│   ├── fetch-kernel-source.sh  Download/prepare distro-matched kernel source
-│   ├── build.sh           Build patched modules from kernel source
-│   ├── install.sh         Install modules + UCM + modprobe config
-│   ├── uninstall.sh       Restore original modules from backup
-│   ├── dkms-install.sh    Register with DKMS
-│   ├── dkms-remove.sh     Remove DKMS registration
-│   └── dkms-build.sh      Build script called by DKMS automatically
+```text
+.
+├── Makefile
 ├── patches/
-│   ├── full-diff.patch    Unified patch (source of truth)
-│   └── upstream/          5 split patches for kernel mailing list
-├── ucm/                   ALSA UCM profile for speaker/mic routing
-│   ├── amd-soundwire.conf
-│   └── HiFi.conf
-└── tutorial/              How this fix works (bug-hunting walkthrough)
+│   ├── full-diff.patch
+│   └── upstream/
+├── extras/
+│   └── hp-dragonfly-pro/
+│       ├── patches/
+│       ├── ucm/
+│       └── modprobe.d/
+├── scripts/
+│   ├── fetch-kernel-source.sh
+│   ├── build.sh
+│   ├── install.sh
+│   ├── uninstall.sh
+│   ├── dkms-build.sh
+│   ├── dkms-install.sh
+│   └── dkms-remove.sh
+├── docs/
+│   └── kernel-source-manual.md
+└── testing/
+    ├── README.md
+    └── run-harness.sh
 ```
-
-## Tutorial
-
-The [`tutorial/`](tutorial/README.md) is a 14-chapter walkthrough covering Linux audio,
-kernel modules, SoundWire, ACPI, and how this fix was built from scratch — from
-identifying the bug to writing the patch. Start with
-[`tutorial/README.md`](tutorial/README.md).
-
----
-
-## System Information
-
-| Property | Value |
-|----------|-------|
-| Laptop | HP Dragonfly Pro Laptop PC |
-| Board | HP 8A7F |
-| Platform | AMD Rembrandt |
-| PCI Device | 1022:15e2 rev 0x60 |
-| Codecs | 2× Realtek RT1316 (SoundWire) |
-| ACPI Path | `\_SB_.PCI0.GP17.ACP_.SDWC` |
-| Tested Kernels | 6.18.9-200.fc43.x86_64, 6.18.12-200.fc43.x86_64 |
-
-TODO: Upstream submission and generalization
-
-- Submit the generic Rembrandt patches (ACP 6.0 / rev 0x60 support and the PDM DAI-ID change) as separate, focused patches for upstream review.
-- Keep the HP Dragonfly-specific DMI quirk in its own minimal patch with logs and repro steps; mark it as a machine quirk.
-- Prefer ACPI/codec/ADR-based detection or explicit codec ID matching to generalize the DMIC fallback; only use DMI when ACPI lacks needed information.
-- Add a machines/ or quirks/ directory to track machine-specific entries and rationale, keeping the main patchset clearly generic.

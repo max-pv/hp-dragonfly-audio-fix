@@ -1,0 +1,25 @@
+From a0b35c55386ae961fb9fe458ce289ca918e1a4ec Mon Sep 17 00:00:00 2001
+From: Max Pimenov <max.a.pimenov@gmail.com>
+Date: Sun, 1 Mar 2026 15:41:25 -0800
+Subject: [PATCH] ASoC: amd: Add HP Dragonfly Pro quirks
+
+Signed-off-by: Max Pimenov <max.a.pimenov@gmail.com>
+
+diff --git a/sound/soc/amd/acp/acp-sdw-legacy-mach.c b/sound/soc/amd/acp/acp-sdw-legacy-mach.c
+index d7aa0ed..db1364b 100644
+--- a/sound/soc/amd/acp/acp-sdw-legacy-mach.c
++++ b/sound/soc/amd/acp/acp-sdw-legacy-mach.c
+@@ -95,6 +95,14 @@ static const struct dmi_system_id soc_sdw_quirk_table[] = {
+ 		},
+ 		.driver_data = (void *)(ASOC_SDW_CODEC_SPKR),
+ 	},
++	{
++		.callback = soc_sdw_quirk_cb,
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
++			DMI_MATCH(DMI_PRODUCT_NAME, "HP Dragonfly Pro Laptop PC"),
++		},
++		.driver_data = (void *)(ASOC_SDW_CODEC_SPKR),
++	},
+ 	{}
+ };

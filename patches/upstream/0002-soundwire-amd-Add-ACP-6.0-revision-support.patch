@@ -1,39 +1,29 @@
-From: Max <max@fedora>
-Date: Sun, 16 Feb 2026 02:00:00 -0800
-Subject: [PATCH 2/5] soundwire: amd: Add ACP 6.0 revision support
+From 362d1fb68ed91d21ad48023996ce85e2c2143b27 Mon Sep 17 00:00:00 2001
+From: Max Pimenov <max.a.pimenov@gmail.com>
+Date: Sun, 1 Mar 2026 15:36:35 -0800
+Subject: [PATCH 2/6] soundwire: amd: Add ACP 6.0 revision and startup fixes
 
-The AMD SoundWire manager driver rejects ACP revision 0x60 (Rembrandt)
-in multiple switch statements, preventing SoundWire codec enumeration.
-The register offsets and behavior for 0x60 are identical to ACP 6.3.
+Signed-off-by: Max Pimenov <max.a.pimenov@gmail.com>
 
-Add case 0x60 and 0x6f to all revision switches in amd_manager.c, and
-add a NULL safety check in amd_init.c for the manager startup path.
-
-Signed-off-by: Max <max@fedora>
----
- drivers/soundwire/amd_init.c    |  2 ++
- drivers/soundwire/amd_manager.c | 10 +++++++++-
- 2 files changed, 11 insertions(+), 1 deletion(-)
-
---- a/drivers/soundwire/amd_init.c	2026-02-15 16:35:19.679615865 -0800
-+++ b/drivers/soundwire/amd_init.c	2026-02-15 18:29:05.607393722 -0800
-@@ -157,6 +157,8 @@
- 		if (!(ctx->link_mask & BIT(i)))
- 			continue;
- 		amd_manager = dev_get_drvdata(&ctx->pdev[i]->dev);
-+		if (!amd_manager)
-+			return -ENODEV;
- 		ret = amd_sdw_manager_start(amd_manager);
- 		if (ret)
- 			return ret;
---- a/drivers/soundwire/amd_manager.c	2026-02-15 16:35:19.679615865 -0800
-+++ b/drivers/soundwire/amd_manager.c	2026-02-15 18:28:50.345483408 -0800
+--- a/include/linux/soundwire/sdw_amd.h
++++ b/include/linux/soundwire/sdw_amd.h
+@@ -27,6 +27,8 @@
+ #define ACP_SDW0	0
+ #define ACP_SDW1	1
+ #define AMD_SDW_MAX_MANAGER_COUNT	2
++#define ACP60_PCI_REV			0x60
++#define ACP6F_PCI_REV			0x6f
+ #define ACP63_PCI_REV_ID		0x63
+ #define ACP70_PCI_REV_ID		0x70
+ #define ACP71_PCI_REV_ID		0x71
+--- a/drivers/soundwire/amd_manager.c
++++ b/drivers/soundwire/amd_manager.c
 @@ -485,6 +485,8 @@
  
  	dev_dbg(amd_manager->dev, "p_params->num:0x%x\n", p_params->num);
  	switch (amd_manager->acp_rev) {
-+	case 0x60:
-+	case 0x6f:
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
  	case ACP63_PCI_REV_ID:
  		switch (amd_manager->instance) {
  		case ACP_SDW0:
@@ -41,8 +31,8 @@ Signed-off-by: Max <max@fedora>
  	u32 offset_reg, lane_ctrl_ch_en_reg;
  
  	switch (amd_manager->acp_rev) {
-+	case 0x60:
-+	case 0x6f:
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
  	case ACP63_PCI_REV_ID:
  		switch (amd_manager->instance) {
  		case ACP_SDW0:
@@ -50,8 +40,8 @@ Signed-off-by: Max <max@fedora>
  	u32 lane_ctrl_ch_en_reg;
  
  	switch (amd_manager->acp_rev) {
-+	case 0x60:
-+	case 0x6f:
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
  	case ACP63_PCI_REV_ID:
  		switch (amd_manager->instance) {
  		case ACP_SDW0:
@@ -59,10 +49,20 @@ Signed-off-by: Max <max@fedora>
  	amd_manager->bus.controller_id = 0;
  	dev_dbg(dev, "acp_rev:0x%x\n", amd_manager->acp_rev);
  	switch (amd_manager->acp_rev) {
-+	case 0x60:
-+	case 0x6f:
++	case ACP60_PCI_REV:
++	case ACP6F_PCI_REV:
  	case ACP63_PCI_REV_ID:
  		switch (amd_manager->instance) {
  		case ACP_SDW0:
--- 
-2.48.1
+--- a/drivers/soundwire/amd_init.c
++++ b/drivers/soundwire/amd_init.c
+@@ -157,7 +157,8 @@
+ 		if (!(ctx->link_mask & BIT(i)))
+ 			continue;
+ 		amd_manager = dev_get_drvdata(&ctx->pdev[i]->dev);
+-		ret = amd_sdw_manager_start(amd_manager);
++		if (amd_manager)
++			ret = amd_sdw_manager_start(amd_manager);
+ 		if (ret)
+ 			return ret;
+ 	}

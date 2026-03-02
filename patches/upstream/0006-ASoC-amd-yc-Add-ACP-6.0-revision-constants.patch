@@ -1,0 +1,20 @@
+From 2f1eca58851f2eafb99959b63ca13e74d8154afa Mon Sep 17 00:00:00 2001
+From: Max Pimenov <max.a.pimenov@gmail.com>
+Date: Sun, 1 Mar 2026 15:40:26 -0800
+Subject: [PATCH 6/6] ASoC: amd: yc: Add ACP 6.0 revision constants
+
+Signed-off-by: Max Pimenov <max.a.pimenov@gmail.com>
+
+diff --git a/sound/soc/amd/yc/acp6x.h b/sound/soc/amd/yc/acp6x.h
+index 2de7d1e..28d8d3f 100644
+--- a/sound/soc/amd/yc/acp6x.h
++++ b/sound/soc/amd/yc/acp6x.h
+@@ -14,6 +14,8 @@
+ #define ACP6x_DEVS		3
+ #define ACP6x_PDM_MODE		1
+ 
++#define ACP60_PCI_REV		0x60
++#define ACP6F_PCI_REV		0x6f
+ #define ACP_SOFT_RESET_SOFTRESET_AUDDONE_MASK	0x00010001
+ #define ACP_PGFSM_CNTL_POWER_ON_MASK	1
+ #define ACP_PGFSM_CNTL_POWER_OFF_MASK	0

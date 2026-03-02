@@ -79,6 +79,11 @@ if [[ "$DISTRO_ID" =~ ^(debian|ubuntu|linuxmint|pop)$ ]] || [[ "$DISTRO_LIKE" =~
     is_debian_like=1
 fi
 
+is_arch_like=0
+if [[ "$DISTRO_ID" =~ ^(arch|endeavouros|manjaro)$ ]] || [[ "$DISTRO_LIKE" =~ arch ]]; then
+    is_arch_like=1
+fi
+
 prepare_common_tree() {
     local src_dir="$1"
     local suffix
@@ -90,7 +95,7 @@ prepare_common_tree() {
     suffix="${KVER#${BASE_VER}}"
 
     if [[ -n "$suffix" ]]; then
-        sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = ${suffix}/" "$src_dir/Makefile"
+        sed -i -E "s/^EXTRAVERSION[[:space:]]*=.*/EXTRAVERSION = ${suffix}/" "$src_dir/Makefile"
     fi
 
     if [[ -f "/boot/config-${KVER}" ]]; then
@@ -213,6 +218,50 @@ prepare_debian_tree() {
     echo "$src_dir"
 }
 
+prepare_arch_tree() {
+    require_cmd patch
+
+    mkdir -p "$OUT_DIR"
+    local src_dir=""
+    local tree_root="$OUT_DIR/arch-linux"
+    mkdir -p "$tree_root"
+
+    if command -v pkgctl >/dev/null 2>&1; then
+        log "Trying pkgctl repo clone for linux package..."
+        (
+            cd "$tree_root"
+            if [[ ! -d linux ]]; then
+                pkgctl repo clone linux >/dev/null
+            fi
+        ) || true
+    fi
+
+    if [[ -z "$src_dir" ]] && command -v asp >/dev/null 2>&1; then
+        log "Trying asp checkout linux..."
+        (
+            cd "$tree_root"
+            asp checkout linux >/dev/null
+        ) || true
+    fi
+
+    local pkgbuild_dir=""
+    pkgbuild_dir="$(find "$tree_root" -type f -name PKGBUILD | sed 's#/PKGBUILD$##' | head -n 1 || true)"
+    [[ -n "$pkgbuild_dir" ]] || die "Could not find Arch linux PKGBUILD checkout (install pkgctl or asp)."
+
+    require_cmd makepkg
+    log "Running makepkg --nobuild to fetch/extract kernel source..."
+    (
+        cd "$pkgbuild_dir"
+        makepkg --nobuild --nodeps --skipchecksums --skippgpcheck >/dev/null
+    ) || die "makepkg --nobuild failed in $pkgbuild_dir"
+
+    src_dir="$(find "$pkgbuild_dir" -type f -path '*/sound/soc/amd/ps/pci-ps.c' | sed 's#/sound/soc/amd/ps/pci-ps.c$##' | head -n 1 || true)"
+    [[ -n "$src_dir" ]] || die "Could not locate extracted Arch kernel source tree after makepkg."
+
+    prepare_common_tree "$src_dir"
+    echo "$src_dir"
+}
+
 main() {
     local src_path
     log "Preparing source for kernel: $KVER"
@@ -222,6 +271,8 @@ main() {
         src_path="$(prepare_fedora_tree)"
     elif [[ $is_debian_like -eq 1 ]]; then
         src_path="$(prepare_debian_tree)"
+    elif [[ $is_arch_like -eq 1 ]]; then
+        src_path="$(prepare_arch_tree)"
     else
         die "Unsupported distro (${DISTRO_ID}). Use a full distro-matched source tree manually."
     fi

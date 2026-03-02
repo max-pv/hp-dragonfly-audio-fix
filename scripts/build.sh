@@ -1,10 +1,11 @@
 #!/bin/bash
-# build.sh — Build patched AMD audio kernel modules for HP Dragonfly Pro
+# build.sh — Build patched AMD Rembrandt SoundWire kernel modules
 #
 # Usage:
 #   ./build.sh                    # Auto-detect kernel source
 #   ./build.sh KSRC=/linux-6.18.9 # Use specific kernel source tree
 #   ./build.sh KVER=6.18.9-200.fc43.x86_64  # Build for specific kernel version
+#   ./build.sh EXTRA=hp-dragonfly-pro       # Apply optional machine extras
 #
 # Requirements:
 #   - Build tools: gcc, make, xz, patch
@@ -24,6 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PATCH_FILE="$ROOT_DIR/patches/full-diff.patch"
+EXTRA_PROFILE=""
 
 # Parse arguments
 KSRC=""
@@ -34,6 +36,7 @@ for arg in "$@"; do
         KSRC=*) KSRC="${arg#KSRC=}" ;;
         KVER=*) KVER="${arg#KVER=}" ;;
         JOBS=*) JOBS="${arg#JOBS=}" ;;
+        EXTRA=*) EXTRA_PROFILE="${arg#EXTRA=}" ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
@@ -119,6 +122,28 @@ Ensure the source tree matches the kernel version the patch was written for."
     fi
 }
 
+apply_extra_patches_if_needed() {
+    local ksrc="$1"
+    local extra_dir patch
+
+    [[ -n "$EXTRA_PROFILE" ]] || return 0
+    extra_dir="$ROOT_DIR/extras/$EXTRA_PROFILE/patches"
+    [[ -d "$extra_dir" ]] || error "Extra profile not found: $EXTRA_PROFILE"
+
+    step "Applying extra profile patches: $EXTRA_PROFILE"
+    cd "$ksrc"
+    for patch in $(ls "$extra_dir"/*.patch 2>/dev/null | sort); do
+        if patch -p1 --dry-run -R < "$patch" &>/dev/null; then
+            info "Extra patch already applied: $(basename "$patch")"
+        elif patch -p1 --dry-run < "$patch" &>/dev/null; then
+            patch -p1 < "$patch"
+            info "Applied extra patch: $(basename "$patch")"
+        else
+            error "Failed applying extra patch: $patch"
+        fi
+    done
+}
+
 # ── Build modules ───────────────────────────────────────────────────────
 
 build_modules() {
@@ -144,22 +169,21 @@ build_modules() {
     # Distro kernels encode their version in EXTRAVERSION (e.g. "-200.fc43.x86_64").
     # Without this, modules get a wrong vermagic and fail to load.
     local src_extraver expected_suffix
-    src_extraver="$(sed -n 's/^EXTRAVERSION = *//p' "$ksrc/Makefile")"
+    src_extraver="$(sed -n 's/^EXTRAVERSION[[:space:]]*=[[:space:]]*//p' "$ksrc/Makefile")"
     # Extract suffix after base version: "6.18.9-200.fc43.x86_64" -> "-200.fc43.x86_64"
     expected_suffix="$(echo "$KVER" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')"
     if [[ -n "$expected_suffix" && "$src_extraver" != "$expected_suffix" ]]; then
         step "Setting EXTRAVERSION = $expected_suffix (to match running kernel)"
-        sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $expected_suffix/" "$ksrc/Makefile"
+        sed -i -E "s/^EXTRAVERSION[[:space:]]*=.*/EXTRAVERSION = $expected_suffix/" "$ksrc/Makefile"
     fi
 
     # Suppress the git-dirty '+' suffix from setlocalversion
     export LOCALVERSION=
 
-    # Ensure build infrastructure is ready
-    if [[ ! -f "$ksrc/scripts/basic/fixdep" ]]; then
-        step "Running modules_prepare..."
-        make modules_prepare -j"$JOBS" &>/dev/null
-    fi
+    # Ensure build infrastructure/version headers are fresh after local version updates.
+    make olddefconfig &>/dev/null
+    step "Running modules_prepare..."
+    make modules_prepare -j"$JOBS" &>/dev/null
 
     # Verify version string matches before building
     if [[ -f "$ksrc/include/generated/utsrelease.h" ]]; then
@@ -230,8 +254,11 @@ build_modules() {
 # ── Main ────────────────────────────────────────────────────────────────
 
 echo ""
-info "HP Dragonfly Pro Audio Fix — Module Builder"
+info "AMD Rembrandt SoundWire Fix — Module Builder"
 info "Target kernel: $KVER"
+if [[ -n "$EXTRA_PROFILE" ]]; then
+    info "Extra profile: $EXTRA_PROFILE"
+fi
 echo ""
 
 check_prerequisites
@@ -240,7 +267,12 @@ step "Locating kernel source..."
 KSRC_FOUND="$(find_kernel_source)"
 info "Using kernel source: $KSRC_FOUND"
 
-apply_patch_if_needed "$KSRC_FOUND"
+if [[ "${SKIP_PATCH:-0}" == "1" ]]; then
+    info "SKIP_PATCH=1 set; assuming kernel source already patched"
+else
+    apply_patch_if_needed "$KSRC_FOUND"
+    apply_extra_patches_if_needed "$KSRC_FOUND"
+fi
 build_modules "$KSRC_FOUND"
 
 echo ""

@@ -9,7 +9,8 @@
 #   2. Copies it to a temp build area
 #   3. Applies the audio patch
 #   4. Builds the 8 modules
-#   5. Copies .ko files to the DKMS build output directory
+#   5. Optionally applies machine-specific extra patches
+#   6. Copies .ko files to the DKMS build output directory
 
 set -euo pipefail
 
@@ -20,9 +21,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PATCH_FILE="$ROOT_DIR/patches/full-diff.patch"
 JOBS="$(nproc)"
+EXTRA_PROFILE=""
 
 log() { echo "[dkms-build] $*"; }
 die() { echo "[dkms-build] ERROR: $*" >&2; exit 1; }
+
+if [[ -f "$ROOT_DIR/extra-profile.conf" ]]; then
+    EXTRA_PROFILE="$(cat "$ROOT_DIR/extra-profile.conf" | tr -d '[:space:]')"
+fi
 
 # ── Find kernel source ──────────────────────────────────────────────────
 
@@ -44,12 +50,12 @@ find_kernel_source() {
 
 Do not use /usr/src/kernels/<kver> (headers-only tree).
 Use ./scripts/fetch-kernel-source.sh to prepare source first, then retry:
-sudo dkms build hp-dragonfly-audio/1.0 -k $KVER"
+sudo dkms build amd-rembrandt-sdw-fix/1.0 -k $KVER"
 }
 
 # ── Main build ───────────────────────────────────────────────────────────
 
-log "Building HP Dragonfly Pro audio modules for kernel $KVER"
+log "Building AMD Rembrandt SoundWire modules for kernel $KVER"
 
 [[ -f "$PATCH_FILE" ]] || die "Patch not found: $PATCH_FILE"
 
@@ -72,6 +78,22 @@ else
     die "Failed to apply patch"
 fi
 
+if [[ -n "$EXTRA_PROFILE" ]]; then
+    EXTRA_DIR="$ROOT_DIR/extras/$EXTRA_PROFILE/patches"
+    [[ -d "$EXTRA_DIR" ]] || die "Extra profile not found: $EXTRA_PROFILE"
+    log "Applying extra profile patches: $EXTRA_PROFILE"
+    for patch_file in $(ls "$EXTRA_DIR"/*.patch 2>/dev/null | sort); do
+        if patch -p1 --dry-run -R < "$patch_file" &>/dev/null; then
+            log "Extra patch already applied: $(basename "$patch_file")"
+        elif patch -p1 --dry-run < "$patch_file" &>/dev/null; then
+            patch -p1 < "$patch_file"
+            log "Applied extra patch: $(basename "$patch_file")"
+        else
+            die "Failed to apply extra patch: $patch_file"
+        fi
+    done
+fi
+
 log "Preparing build configuration..."
 if [[ ! -f "$BUILDDIR/.config" ]]; then
     if [[ -f "/boot/config-$KVER" ]]; then
@@ -85,10 +107,10 @@ fi
 
 # Match the running kernel's version string exactly
 KVER_SUFFIX="$(echo "$KVER" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')"
-SRC_EXTRAVER="$(sed -n 's/^EXTRAVERSION = *//p' "$BUILDDIR/Makefile")"
+SRC_EXTRAVER="$(sed -n 's/^EXTRAVERSION[[:space:]]*=[[:space:]]*//p' "$BUILDDIR/Makefile")"
 if [[ -n "$KVER_SUFFIX" && "$SRC_EXTRAVER" != "$KVER_SUFFIX" ]]; then
     log "Setting EXTRAVERSION = $KVER_SUFFIX"
-    sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $KVER_SUFFIX/" "$BUILDDIR/Makefile"
+    sed -i -E "s/^EXTRAVERSION[[:space:]]*=.*/EXTRAVERSION = $KVER_SUFFIX/" "$BUILDDIR/Makefile"
 fi
 export LOCALVERSION=
 

@@ -1,50 +1,39 @@
-# HP Dragonfly Pro Audio Fix
+# AMD Rembrandt SoundWire Fix
 
-## What This Is
+## What this repo is
 
-An out-of-tree kernel module patchset that enables internal speaker audio on the HP Dragonfly Pro laptop (AMD Rembrandt ACP 6.0 + 2× Realtek RT1316 SoundWire amplifiers). It patches 8 kernel modules, provides ALSA UCM profiles, and supports DKMS for automatic rebuilds on kernel updates.
+An out-of-tree kernel module patch set for AMD Rembrandt SoundWire audio bring-up.
+It targets ACP revision compatibility (`0x60`/`0x6f` vs `0x63` paths), SoundWire
+enumeration, and related ASoC glue fixes.
 
-## Architecture
+Machine-specific behavior is separated into `extras/<profile>/`.
 
-The single source of truth for all code changes is `patches/full-diff.patch` — a unified diff against the upstream kernel tree. The `patches/upstream/` directory contains the same changes split into 5 patches formatted for kernel mailing list submission (generated from the unified patch, not independently maintained).
+## Patch layout
 
-The build system (`scripts/build.sh`) works by applying the patch to a full kernel source tree, then running `make modules` for 4 subdirectories (`sound/soc/amd/ps`, `sound/soc/amd/acp`, `sound/soc/amd/yc`, `drivers/soundwire`). Built modules are xz-compressed with `--check=crc32` (kernel requirement) and placed in `compiled/<kernel-version>/`.
+- `patches/full-diff.patch`: generic combined patch
+- `patches/upstream/*.patch`: generic split patch series
+- `extras/<profile>/patches/*.patch`: optional machine-specific quirks
 
-Two install paths exist:
-- **Build-from-source** (`make build && sudo make install`) — any kernel
-- **DKMS** (`sudo make dkms-install`) — auto-rebuilds on kernel updates via `scripts/dkms-build.sh`
+## Build/install paths
 
-The UCM profile (`ucm/`) configures PipeWire/ALSA speaker and mic routing. The modprobe config sets `quirk=32800` and preloads `snd_soc_dmic`/`snd_ps_pdm_dma` before the machine driver.
+- Build/install directly:
+  - `make build KSRC=/path/to/linux-source [EXTRA=<profile>]`
+  - `sudo make install [EXTRA=<profile>]`
+- DKMS:
+  - `sudo make dkms-install [EXTRA=<profile>]`
+  - `sudo make dkms-remove`
 
-## Build Commands
+## Source acquisition
 
-```bash
-# Build modules (requires full kernel source tree, not just kernel-devel headers)
-make build KSRC=/path/to/linux-source
+Use `scripts/fetch-kernel-source.sh` to prepare distro-matched full source trees
+(Fedora/RHEL-like, Debian/Ubuntu, and Arch-like).
 
-# Build for a specific kernel version
-make build KSRC=/path/to/linux-source KVER=6.18.9-200.fc43.x86_64
+Manual fallback instructions are in `docs/kernel-source-manual.md`.
 
-# Install (requires root)
-sudo make install
+## Validation
 
-# Uninstall (restores from backup)
-sudo make uninstall
-
-# DKMS install/remove
-sudo make dkms-install
-sudo make dkms-remove
-
-# Clean build artifacts
-make clean
-```
-
-There are no tests or linters in this project.
-
-## Key Conventions
-
-- All shell scripts live in `scripts/` and use `set -euo pipefail` and colored log helper functions (`info`, `warn`, `error`).
-- The Makefile is a thin wrapper that delegates to `scripts/*.sh`.
-- `make install` backs up original modules to `compiled/backup-<kver>/` before overwriting. `make uninstall` restores from this backup.
-- The DKMS build (`scripts/dkms-build.sh`) copies the full kernel source to a temp directory before patching so the original tree stays clean, unlike `scripts/build.sh` which patches in-place.
-- Module install uses `dd if=... of=... bs=4k` with `cp` as fallback (avoids filesystem copy-on-write issues on some setups).
+Use `testing/run-harness.sh` to verify:
+- full patch applies
+- split patches apply
+- optional extras apply
+- revision constants are used

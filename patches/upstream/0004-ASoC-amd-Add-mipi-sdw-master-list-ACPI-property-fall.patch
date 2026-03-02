@@ -1,30 +1,23 @@
-From: Max <max@fedora>
-Date: Sun, 16 Feb 2026 02:00:00 -0800
-Subject: [PATCH 4/5] ASoC: amd: Add mipi-sdw-master-list ACPI property fallback
+From 6bc0e72353e423c665859d04332ba6e4bb20b3c9 Mon Sep 17 00:00:00 2001
+From: Max Pimenov <max.a.pimenov@gmail.com>
+Date: Sun, 1 Mar 2026 15:36:58 -0800
+Subject: [PATCH 4/6] ASoC: amd: Add mipi-sdw-master-list fallback
 
-Some BIOS implementations (including HP Dragonfly Pro) use the
-deprecated "mipi-sdw-master-list" ACPI property name instead of the
-current "mipi-sdw-manager-list". Add a fallback to try the old name
-before failing, matching the approach used by Intel SoundWire drivers.
+Signed-off-by: Max Pimenov <max.a.pimenov@gmail.com>
 
-Signed-off-by: Max <max@fedora>
----
- sound/soc/amd/acp/amd-sdw-acpi.c | 5 +++++
- 1 file changed, 5 insertions(+)
-
---- a/sound/soc/amd/acp/amd-sdw-acpi.c	2026-02-15 16:35:21.025703002 -0800
-+++ b/sound/soc/amd/acp/amd-sdw-acpi.c	2026-02-15 18:04:36.014677024 -0800
-@@ -36,6 +36,11 @@
+diff --git a/sound/soc/amd/acp/amd-sdw-acpi.c b/sound/soc/amd/acp/amd-sdw-acpi.c
+index 0160b0d..f4bf3b4 100644
+--- a/sound/soc/amd/acp/amd-sdw-acpi.c
++++ b/sound/soc/amd/acp/amd-sdw-acpi.c
+@@ -35,6 +35,11 @@ int amd_sdw_scan_controller(struct sdw_amd_acpi_info *info)
+ 	/* Found controller, find links supported */
  	ret = fwnode_property_read_u32_array(acpi_fwnode_handle(adev),
  					     "mipi-sdw-manager-list", &sdw_bitmap, 1);
- 	if (ret) {
++	if (ret) {
 +		/* Try deprecated property name used by older BIOS */
 +		ret = fwnode_property_read_u32_array(acpi_fwnode_handle(adev),
 +						     "mipi-sdw-master-list", &sdw_bitmap, 1);
 +	}
-+	if (ret) {
+ 	if (ret) {
  		dev_err(&adev->dev,
  			"Failed to read mipi-sdw-manager-list: %d\n", ret);
- 		return -EINVAL;
--- 
-2.48.1
